@@ -1,0 +1,8 @@
+{
+  "name": "pdfjs-netheos-dist",
+  "version": "1.0.0",
+  "main": ["./web/compatibility.js", "./build/pdf.js"],
+  "ignore": [],
+  "dependencies": {
+  }
+}
