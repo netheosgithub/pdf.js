@@ -34,6 +34,7 @@ var DEFAULT_RANGE_CHUNK_SIZE = 65536; // 2^16 = 65536
 var isWorkerDisabled = false;
 var workerSrc;
 var isPostMessageTransfersDisabled = false;
+var isAnnotationsIgnored = false;
 
 var pdfjsFilePath =
   typeof PDFJSDev !== 'undefined' &&
@@ -164,12 +165,13 @@ if (typeof PDFJSDev !== 'undefined' &&
  *
  * @return {PDFDocumentLoadingTask}
  */
-function getDocument(src, pdfDataRangeTransport,
+function getDocument(src, ignoreAnnotations, pdfDataRangeTransport,
                      passwordCallback, progressCallback) {
   var task = new PDFDocumentLoadingTask();
+  isAnnotationsIgnored = !!ignoreAnnotations;
 
   // Support of the obsolete arguments (for compatibility with API v1.0)
-  if (arguments.length > 1) {
+  if (arguments.length > 2) {
     deprecated('getDocument is called with pdfDataRangeTransport, ' +
                'passwordCallback or progressCallback argument');
   }
@@ -855,6 +857,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
           pageIndex: this.pageNumber - 1,
           intent: renderingIntent,
           renderInteractiveForms: (params.renderInteractiveForms === true),
+          ignoreAnnotations: isAnnotationsIgnored
         });
       }
 

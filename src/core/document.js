@@ -192,7 +192,7 @@ var Page = (function PageClosure() {
       });
     },
 
-    getOperatorList({ handler, task, intent, renderInteractiveForms, }) {
+    getOperatorList({ handler, task, intent, renderInteractiveForms, ignoreAnnotations }) {
       var contentStreamPromise = this.pdfManager.ensure(this,
                                                         'getContentStream');
       var resourcesPromise = this.loadResources([
@@ -238,6 +238,7 @@ var Page = (function PageClosure() {
 
       // Fetch the page's annotations and add their operator lists to the
       // page's operator list to render them.
+      this.ignoreAnnotations = ignoreAnnotations;
       var annotationsPromise = this.pdfManager.ensure(this, 'annotations');
       return Promise.all([pageListPromise, annotationsPromise]).then(
           function ([pageOpList, annotations]) {
@@ -316,6 +317,11 @@ var Page = (function PageClosure() {
 
     get annotations() {
       var annotations = [];
+
+      if (this.ignoreAnnotations) {
+        return shadow(this, 'annotations', annotations);
+      }
+
       var annotationRefs = this.getInheritedPageProp('Annots') || [];
       var annotationFactory = new AnnotationFactory();
       for (var i = 0, n = annotationRefs.length; i < n; ++i) {
