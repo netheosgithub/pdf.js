@@ -13,29 +13,9 @@
  * limitations under the License.
  */
 
-'use strict';
-
-(function (root, factory) {
-  if (typeof define === 'function' && define.amd) {
-    define('pdfjs/core/function', ['exports', 'pdfjs/shared/util',
-      'pdfjs/core/primitives', 'pdfjs/core/ps_parser'], factory);
-  } else if (typeof exports !== 'undefined') {
-    factory(exports, require('../shared/util.js'), require('./primitives.js'),
-      require('./ps_parser.js'));
-  } else {
-    factory((root.pdfjsCoreFunction = {}), root.pdfjsSharedUtil,
-      root.pdfjsCorePrimitives, root.pdfjsCorePsParser);
-  }
-}(this, function (exports, sharedUtil, corePrimitives, corePsParser) {
-
-var error = sharedUtil.error;
-var info = sharedUtil.info;
-var isArray = sharedUtil.isArray;
-var isBool = sharedUtil.isBool;
-var isDict = corePrimitives.isDict;
-var isStream = corePrimitives.isStream;
-var PostScriptLexer = corePsParser.PostScriptLexer;
-var PostScriptParser = corePsParser.PostScriptParser;
+import { error, info, isArray, isBool } from '../shared/util';
+import { isDict, isStream } from './primitives';
+import { PostScriptLexer, PostScriptParser } from './ps_parser';
 
 var PDFFunction = (function PDFFunctionClosure() {
   var CONSTRUCT_SAMPLED = 0;
@@ -104,7 +84,7 @@ var PDFFunction = (function PDFFunctionClosure() {
           return this.constructInterpolatedFromIR(IR);
         case CONSTRUCT_STICHED:
           return this.constructStichedFromIR(IR);
-        //case CONSTRUCT_POSTSCRIPT:
+        // case CONSTRUCT_POSTSCRIPT:
         default:
           return this.constructPostScriptFromIR(IR);
       }
@@ -144,8 +124,8 @@ var PDFFunction = (function PDFFunctionClosure() {
         }
         return out;
       }
-      var domain = dict.get('Domain');
-      var range = dict.get('Range');
+      var domain = dict.getArray('Domain');
+      var range = dict.getArray('Range');
 
       if (!domain || !range) {
         error('No domain or range');
@@ -166,7 +146,7 @@ var PDFFunction = (function PDFFunctionClosure() {
         info('No support for cubic spline interpolation: ' + order);
       }
 
-      var encode = dict.get('Encode');
+      var encode = dict.getArray('Encode');
       if (!encode) {
         encode = [];
         for (var i = 0; i < inputSize; ++i) {
@@ -176,7 +156,7 @@ var PDFFunction = (function PDFFunctionClosure() {
       }
       encode = toMultiArray(encode);
 
-      var decode = dict.get('Decode');
+      var decode = dict.getArray('Decode');
       if (!decode) {
         decode = range;
       } else {
@@ -207,7 +187,7 @@ var PDFFunction = (function PDFFunctionClosure() {
         var samples = IR[5];
         var size = IR[6];
         var n = IR[7];
-        //var mask = IR[8];
+        // var mask = IR[8];
         var range = IR[9];
 
         // Building the cube vertices: its part and sample index
@@ -226,7 +206,7 @@ var PDFFunction = (function PDFFunctionClosure() {
           // x_i' = min(max(x_i, Domain_2i), Domain_2i+1)
           var domain_2i = domain[i][0];
           var domain_2i_1 = domain[i][1];
-          var xi = Math.min(Math.max(src[srcOffset +i], domain_2i),
+          var xi = Math.min(Math.max(src[srcOffset + i], domain_2i),
                             domain_2i_1);
 
           // e_i = Interpolate(x_i', Domain_2i, Domain_2i+1,
@@ -278,8 +258,8 @@ var PDFFunction = (function PDFFunctionClosure() {
 
     constructInterpolated: function PDFFunction_constructInterpolated(str,
                                                                       dict) {
-      var c0 = dict.get('C0') || [0];
-      var c1 = dict.get('C1') || [1];
+      var c0 = dict.getArray('C0') || [0];
+      var c1 = dict.getArray('C1') || [1];
       var n = dict.get('N');
 
       if (!isArray(c0) || !isArray(c1)) {
@@ -314,7 +294,7 @@ var PDFFunction = (function PDFFunctionClosure() {
     },
 
     constructStiched: function PDFFunction_constructStiched(fn, dict, xref) {
-      var domain = dict.get('Domain');
+      var domain = dict.getArray('Domain');
 
       if (!domain) {
         error('No domain');
@@ -331,8 +311,8 @@ var PDFFunction = (function PDFFunctionClosure() {
         fns.push(PDFFunction.getIR(xref, xref.fetchIfRef(fnRefs[i])));
       }
 
-      var bounds = dict.get('Bounds');
-      var encode = dict.get('Encode');
+      var bounds = dict.getArray('Bounds');
+      var encode = dict.getArray('Encode');
 
       return [CONSTRUCT_STICHED, domain, bounds, encode, fns];
     },
@@ -362,7 +342,7 @@ var PDFFunction = (function PDFFunctionClosure() {
 
         // clip to domain
         var v = clip(src[srcOffset], domain[0], domain[1]);
-        // calulate which bound the value is in
+        // calculate which bound the value is in
         for (var i = 0, ii = bounds.length; i < ii; ++i) {
           if (v < bounds[i]) {
             break;
@@ -394,8 +374,8 @@ var PDFFunction = (function PDFFunctionClosure() {
 
     constructPostScript: function PDFFunction_constructPostScript(fn, dict,
                                                                   xref) {
-      var domain = dict.get('Domain');
-      var range = dict.get('Range');
+      var domain = dict.getArray('Domain');
+      var range = dict.getArray('Range');
 
       if (!domain) {
         error('No domain.');
@@ -423,7 +403,7 @@ var PDFFunction = (function PDFFunctionClosure() {
         // Compiled function consists of simple expressions such as addition,
         // subtraction, Math.max, and also contains 'var' and 'return'
         // statements. See the generation in the PostScriptCompiler below.
-        /*jshint -W054 */
+        // eslint-disable-next-line no-new-func
         return new Function('src', 'srcOffset', 'dest', 'destOffset', compiled);
       }
 
@@ -467,7 +447,7 @@ var PDFFunction = (function PDFFunctionClosure() {
           if (value < bound) {
             value = bound;
           } else {
-            bound = range[i * 2 +1];
+            bound = range[i * 2 + 1];
             if (value > bound) {
               value = bound;
             }
@@ -480,7 +460,7 @@ var PDFFunction = (function PDFFunctionClosure() {
         }
         dest.set(output, destOffset);
       };
-    }
+    },
   };
 })();
 
@@ -544,7 +524,7 @@ var PostScriptStack = (function PostScriptStackClosure() {
       for (i = c, j = r; i < j; i++, j--) {
         t = stack[i]; stack[i] = stack[j]; stack[j] = t;
       }
-    }
+    },
   };
   return PostScriptStack;
 })();
@@ -780,7 +760,7 @@ var PostScriptEvaluator = (function PostScriptEvaluatorClosure() {
         }
       }
       return stack.stack;
-    }
+    },
   };
   return PostScriptEvaluator;
 })();
@@ -870,38 +850,38 @@ var PostScriptCompiler = (function PostScriptCompilerClosure() {
     this.parts = [];
   }
   ExpressionBuilderVisitor.prototype = {
-    visitArgument: function (arg) {
+    visitArgument(arg) {
       this.parts.push('Math.max(', arg.min, ', Math.min(',
                       arg.max, ', src[srcOffset + ', arg.index, ']))');
     },
-    visitVariable: function (variable) {
+    visitVariable(variable) {
       this.parts.push('v', variable.index);
     },
-    visitLiteral: function (literal) {
+    visitLiteral(literal) {
       this.parts.push(literal.number);
     },
-    visitBinaryOperation: function (operation) {
+    visitBinaryOperation(operation) {
       this.parts.push('(');
       operation.arg1.visit(this);
       this.parts.push(' ', operation.op, ' ');
       operation.arg2.visit(this);
       this.parts.push(')');
     },
-    visitVariableDefinition: function (definition) {
+    visitVariableDefinition(definition) {
       this.parts.push('var ');
       definition.variable.visit(this);
       this.parts.push(' = ');
       definition.arg.visit(this);
       this.parts.push(';');
     },
-    visitMin: function (max) {
+    visitMin(max) {
       this.parts.push('Math.min(');
       max.arg.visit(this);
       this.parts.push(', ', max.max, ')');
     },
-    toString: function () {
+    toString() {
       return this.parts.join('');
-    }
+    },
   };
 
   function buildAddOperation(num1, num2) {
@@ -1052,7 +1032,7 @@ var PostScriptCompiler = (function PostScriptCompilerClosure() {
               return null;
             }
             n = num1.number;
-            if (n < 0 || (n|0) !== n || stack.length < n) {
+            if (n < 0 || (n | 0) !== n || stack.length < n) {
               return null;
             }
             ast1 = stack[stack.length - n - 1];
@@ -1102,7 +1082,7 @@ var PostScriptCompiler = (function PostScriptCompilerClosure() {
             }
             j = num2.number;
             n = num1.number;
-            if (n <= 0 || (n|0) !== n || (j|0) !== j || stack.length < n) {
+            if (n <= 0 || (n | 0) !== n || (j | 0) !== j || stack.length < n) {
               // ... and integers
               return null;
             }
@@ -1146,14 +1126,15 @@ var PostScriptCompiler = (function PostScriptCompilerClosure() {
         result.push(out.join(''));
       });
       return result.join('\n');
-    }
+    },
   };
 
   return PostScriptCompiler;
 })();
 
-exports.isPDFFunction = isPDFFunction;
-exports.PDFFunction = PDFFunction;
-exports.PostScriptEvaluator = PostScriptEvaluator;
-exports.PostScriptCompiler = PostScriptCompiler;
-}));
+export {
+  isPDFFunction,
+  PDFFunction,
+  PostScriptEvaluator,
+  PostScriptCompiler,
+};

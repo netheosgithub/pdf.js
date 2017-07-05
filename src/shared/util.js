@@ -12,25 +12,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* globals MozBlobBuilder, URL, global */
+/* globals global, process, __pdfjsdev_webpack__ */
 
-'use strict';
+import './compatibility';
+import { ReadableStream } from '../../external/streams/streams-lib';
 
-(function (root, factory) {
-  if (typeof define === 'function' && define.amd) {
-    define('pdfjs/shared/util', ['exports'], factory);
-  } else if (typeof exports !== 'undefined') {
-    factory(exports);
-  } else {
-    factory((root.pdfjsSharedUtil = {}));
-  }
-}(this, function (exports) {
-
-var globalScope = (typeof window !== 'undefined') ? window :
-                  (typeof global !== 'undefined') ? global :
-                  (typeof self !== 'undefined') ? self : this;
+var globalScope =
+  (typeof window !== 'undefined' && window.Math === Math) ? window :
+  (typeof global !== 'undefined' && global.Math === Math) ? global :
+  (typeof self !== 'undefined' && self.Math === Math) ? self : this;
 
 var FONT_IDENTITY_MATRIX = [0.001, 0, 0, 0.001, 0, 0];
+
+const NativeImageDecoding = {
+  NONE: 'none',
+  DECODE: 'decode',
+  DISPLAY: 'display',
+};
 
 var TextRenderingMode = {
   FILL: 0,
@@ -42,13 +40,13 @@ var TextRenderingMode = {
   FILL_STROKE_ADD_TO_PATH: 6,
   ADD_TO_PATH: 7,
   FILL_STROKE_MASK: 3,
-  ADD_TO_PATH_FLAG: 4
+  ADD_TO_PATH_FLAG: 4,
 };
 
 var ImageKind = {
   GRAYSCALE_1BPP: 1,
   RGB_24BPP: 2,
-  RGBA_32BPP: 3
+  RGBA_32BPP: 3,
 };
 
 var AnnotationType = {
@@ -77,7 +75,7 @@ var AnnotationType = {
   TRAPNET: 23,
   WATERMARK: 24,
   THREED: 25,
-  REDACT: 26
+  REDACT: 26,
 };
 
 var AnnotationFlag = {
@@ -90,7 +88,29 @@ var AnnotationFlag = {
   READONLY: 0x40,
   LOCKED: 0x80,
   TOGGLENOVIEW: 0x100,
-  LOCKEDCONTENTS: 0x200
+  LOCKEDCONTENTS: 0x200,
+};
+
+var AnnotationFieldFlag = {
+  READONLY: 0x0000001,
+  REQUIRED: 0x0000002,
+  NOEXPORT: 0x0000004,
+  MULTILINE: 0x0001000,
+  PASSWORD: 0x0002000,
+  NOTOGGLETOOFF: 0x0004000,
+  RADIO: 0x0008000,
+  PUSHBUTTON: 0x0010000,
+  COMBO: 0x0020000,
+  EDIT: 0x0040000,
+  SORT: 0x0080000,
+  FILESELECT: 0x0100000,
+  MULTISELECT: 0x0200000,
+  DONOTSPELLCHECK: 0x0400000,
+  DONOTSCROLL: 0x0800000,
+  COMB: 0x1000000,
+  RICHTEXT: 0x2000000,
+  RADIOSINUNISON: 0x2000000,
+  COMMITONSELCHANGE: 0x4000000,
 };
 
 var AnnotationBorderStyleType = {
@@ -98,7 +118,7 @@ var AnnotationBorderStyleType = {
   DASHED: 2,
   BEVELED: 3,
   INSET: 4,
-  UNDERLINE: 5
+  UNDERLINE: 5,
 };
 
 var StreamType = {
@@ -111,7 +131,7 @@ var StreamType = {
   A85: 6,
   AHX: 7,
   CCF: 8,
-  RL: 9
+  RL: 9,
 };
 
 var FontType = {
@@ -125,13 +145,19 @@ var FontType = {
   TYPE3: 7,
   OPENTYPE: 8,
   TYPE0: 9,
-  MMTYPE1: 10
+  MMTYPE1: 10,
 };
 
 var VERBOSITY_LEVELS = {
   errors: 0,
   warnings: 1,
-  infos: 5
+  infos: 5,
+};
+
+var CMapCompressionType = {
+  NONE: 0,
+  BINARY: 1,
+  STREAM: 2,
 };
 
 // All the possible operations for an operator list.
@@ -228,7 +254,7 @@ var OPS = {
   paintImageXObjectRepeat: 88,
   paintImageMaskXObjectRepeat: 89,
   paintSolidColorImageMask: 90,
-  constructPath: 91
+  constructPath: 91,
 };
 
 var verbosity = VERBOSITY_LEVELS.warnings;
@@ -292,7 +318,7 @@ var UNSUPPORTED_FEATURES = {
   javaScript: 'javaScript',
   smask: 'smask',
   shadingPattern: 'shadingPattern',
-  font: 'font'
+  font: 'font',
 };
 
 // Checks if URLs have the same origin. For non-HTTP based URLs, returns false.
@@ -310,35 +336,47 @@ function isSameOrigin(baseUrl, otherUrl) {
   return base.origin === other.origin;
 }
 
-// Validates if URL is safe and allowed, e.g. to avoid XSS.
-function isValidUrl(url, allowRelative) {
-  if (!url || typeof url !== 'string') {
+// Checks if URLs use one of the whitelisted protocols, e.g. to avoid XSS.
+function isValidProtocol(url) {
+  if (!url) {
     return false;
   }
-  // RFC 3986 (http://tools.ietf.org/html/rfc3986#section-3.1)
-  // scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
-  var protocol = /^[a-z][a-z0-9+\-.]*(?=:)/i.exec(url);
-  if (!protocol) {
-    return allowRelative;
-  }
-  protocol = protocol[0].toLowerCase();
-  switch (protocol) {
-    case 'http':
-    case 'https':
-    case 'ftp':
-    case 'mailto':
-    case 'tel':
+  switch (url.protocol) {
+    case 'http:':
+    case 'https:':
+    case 'ftp:':
+    case 'mailto:':
+    case 'tel:':
       return true;
     default:
       return false;
   }
 }
 
+/**
+ * Attempts to create a valid absolute URL (utilizing `isValidProtocol`).
+ * @param {URL|string} url - An absolute, or relative, URL.
+ * @param {URL|string} baseUrl - An absolute URL.
+ * @returns Either a valid {URL}, or `null` otherwise.
+ */
+function createValidAbsoluteUrl(url, baseUrl) {
+  if (!url) {
+    return null;
+  }
+  try {
+    var absoluteUrl = baseUrl ? new URL(url, baseUrl) : new URL(url);
+    if (isValidProtocol(absoluteUrl)) {
+      return absoluteUrl;
+    }
+  } catch (ex) { /* `new URL()` will throw on incorrect data. */ }
+  return null;
+}
+
 function shadow(obj, prop, value) {
-  Object.defineProperty(obj, prop, { value: value,
+  Object.defineProperty(obj, prop, { value,
                                      enumerable: true,
                                      configurable: true,
-                                     writable: false });
+                                     writable: false, });
   return value;
 }
 
@@ -356,7 +394,7 @@ function getLookupTableFactory(initializer) {
 
 var PasswordResponses = {
   NEED_PASSWORD: 1,
-  INCORRECT_PASSWORD: 2
+  INCORRECT_PASSWORD: 2,
 };
 
 var PasswordException = (function PasswordExceptionClosure() {
@@ -523,7 +561,7 @@ function arraysToBytes(arr) {
   }
   var resultLength = 0;
   var i, ii = arr.length;
-  var item, itemLength ;
+  var item, itemLength;
   for (i = 0; i < ii; i++) {
     item = arr[i];
     itemLength = arrayByteLength(item);
@@ -577,66 +615,21 @@ function readUint32(data, offset) {
 // Lazy test the endianness of the platform
 // NOTE: This will be 'true' for simulated TypedArrays
 function isLittleEndian() {
-  var buffer8 = new Uint8Array(2);
+  var buffer8 = new Uint8Array(4);
   buffer8[0] = 1;
-  var buffer16 = new Uint16Array(buffer8.buffer);
-  return (buffer16[0] === 1);
+  var view32 = new Uint32Array(buffer8.buffer, 0, 1);
+  return (view32[0] === 1);
 }
 
 // Checks if it's possible to eval JS expressions.
 function isEvalSupported() {
   try {
-    /* jshint evil: true */
-    new Function('');
+    new Function(''); // eslint-disable-line no-new, no-new-func
     return true;
   } catch (e) {
     return false;
   }
 }
-
-//#if !(FIREFOX || MOZCENTRAL || CHROME)
-var Uint32ArrayView = (function Uint32ArrayViewClosure() {
-
-  function Uint32ArrayView(buffer, length) {
-    this.buffer = buffer;
-    this.byteLength = buffer.length;
-    this.length = length === undefined ? (this.byteLength >> 2) : length;
-    ensureUint32ArrayViewProps(this.length);
-  }
-  Uint32ArrayView.prototype = Object.create(null);
-
-  var uint32ArrayViewSetters = 0;
-  function createUint32ArrayProp(index) {
-    return {
-      get: function () {
-        var buffer = this.buffer, offset = index << 2;
-        return (buffer[offset] | (buffer[offset + 1] << 8) |
-          (buffer[offset + 2] << 16) | (buffer[offset + 3] << 24)) >>> 0;
-      },
-      set: function (value) {
-        var buffer = this.buffer, offset = index << 2;
-        buffer[offset] = value & 255;
-        buffer[offset + 1] = (value >> 8) & 255;
-        buffer[offset + 2] = (value >> 16) & 255;
-        buffer[offset + 3] = (value >>> 24) & 255;
-      }
-    };
-  }
-
-  function ensureUint32ArrayViewProps(length) {
-    while (uint32ArrayViewSetters < length) {
-      Object.defineProperty(Uint32ArrayView.prototype,
-        uint32ArrayViewSetters,
-        createUint32ArrayProp(uint32ArrayViewSetters));
-      uint32ArrayViewSetters++;
-    }
-  }
-
-  return Uint32ArrayView;
-})();
-
-exports.Uint32ArrayView = Uint32ArrayView;
-//#endif
 
 var IDENTITY_MATRIX = [1, 0, 0, 1, 0, 0];
 
@@ -851,15 +844,15 @@ var Util = (function UtilClosure() {
     }
   };
 
-  Util.getInheritableProperty = function Util_getInheritableProperty(dict,
-                                                                     name) {
+  Util.getInheritableProperty =
+      function Util_getInheritableProperty(dict, name, getArray) {
     while (dict && !dict.has(name)) {
       dict = dict.get('Parent');
     }
     if (!dict) {
       return null;
     }
-    return dict.get(name);
+    return getArray ? dict.getArray(name) : dict.get(name);
   };
 
   Util.inherit = function Util_inherit(sub, base, prototype) {
@@ -928,7 +921,7 @@ var PageViewport = (function PageViewportClosure() {
       case 270:
         rotateA = 0; rotateB = -1; rotateC = -1; rotateD = 0;
         break;
-      //case 0:
+      // case 0:
       default:
         rotateA = 1; rotateB = 0; rotateC = 0; rotateD = -1;
         break;
@@ -1019,7 +1012,7 @@ var PageViewport = (function PageViewportClosure() {
      */
     convertToPdfPoint: function PageViewport_convertToPdfPoint(x, y) {
       return Util.applyInverseTransform([x, y], this.transform);
-    }
+    },
   };
   return PageViewport;
 })();
@@ -1092,12 +1085,25 @@ function isArrayBuffer(v) {
   return typeof v === 'object' && v !== null && v.byteLength !== undefined;
 }
 
+// Checks if ch is one of the following characters: SPACE, TAB, CR or LF.
+function isSpace(ch) {
+  return (ch === 0x20 || ch === 0x09 || ch === 0x0D || ch === 0x0A);
+}
+
+function isNodeJS() {
+  // The if below protected by __pdfjsdev_webpack__ check from webpack parsing.
+  if (typeof __pdfjsdev_webpack__ === 'undefined') {
+    return typeof process === 'object' && process + '' === '[object process]';
+  }
+  return false;
+}
+
 /**
  * Promise Capability object.
  *
  * @typedef {Object} PromiseCapability
  * @property {Promise} promise - A promise object.
- * @property {function} resolve - Fullfills the promise.
+ * @property {function} resolve - Fulfills the promise.
  * @property {function} reject - Rejects the promise.
  */
 
@@ -1116,326 +1122,6 @@ function createPromiseCapability() {
   });
   return capability;
 }
-
-/**
- * Polyfill for Promises:
- * The following promise implementation tries to generally implement the
- * Promise/A+ spec. Some notable differences from other promise libaries are:
- * - There currently isn't a seperate deferred and promise object.
- * - Unhandled rejections eventually show an error if they aren't handled.
- *
- * Based off of the work in:
- * https://bugzilla.mozilla.org/show_bug.cgi?id=810490
- */
-(function PromiseClosure() {
-  if (globalScope.Promise) {
-    // Promises existing in the DOM/Worker, checking presence of all/resolve
-    if (typeof globalScope.Promise.all !== 'function') {
-      globalScope.Promise.all = function (iterable) {
-        var count = 0, results = [], resolve, reject;
-        var promise = new globalScope.Promise(function (resolve_, reject_) {
-          resolve = resolve_;
-          reject = reject_;
-        });
-        iterable.forEach(function (p, i) {
-          count++;
-          p.then(function (result) {
-            results[i] = result;
-            count--;
-            if (count === 0) {
-              resolve(results);
-            }
-          }, reject);
-        });
-        if (count === 0) {
-          resolve(results);
-        }
-        return promise;
-      };
-    }
-    if (typeof globalScope.Promise.resolve !== 'function') {
-      globalScope.Promise.resolve = function (value) {
-        return new globalScope.Promise(function (resolve) { resolve(value); });
-      };
-    }
-    if (typeof globalScope.Promise.reject !== 'function') {
-      globalScope.Promise.reject = function (reason) {
-        return new globalScope.Promise(function (resolve, reject) {
-          reject(reason);
-        });
-      };
-    }
-    if (typeof globalScope.Promise.prototype.catch !== 'function') {
-      globalScope.Promise.prototype.catch = function (onReject) {
-        return globalScope.Promise.prototype.then(undefined, onReject);
-      };
-    }
-    return;
-  }
-//#if !MOZCENTRAL
-  var STATUS_PENDING = 0;
-  var STATUS_RESOLVED = 1;
-  var STATUS_REJECTED = 2;
-
-  // In an attempt to avoid silent exceptions, unhandled rejections are
-  // tracked and if they aren't handled in a certain amount of time an
-  // error is logged.
-  var REJECTION_TIMEOUT = 500;
-
-  var HandlerManager = {
-    handlers: [],
-    running: false,
-    unhandledRejections: [],
-    pendingRejectionCheck: false,
-
-    scheduleHandlers: function scheduleHandlers(promise) {
-      if (promise._status === STATUS_PENDING) {
-        return;
-      }
-
-      this.handlers = this.handlers.concat(promise._handlers);
-      promise._handlers = [];
-
-      if (this.running) {
-        return;
-      }
-      this.running = true;
-
-      setTimeout(this.runHandlers.bind(this), 0);
-    },
-
-    runHandlers: function runHandlers() {
-      var RUN_TIMEOUT = 1; // ms
-      var timeoutAt = Date.now() + RUN_TIMEOUT;
-      while (this.handlers.length > 0) {
-        var handler = this.handlers.shift();
-
-        var nextStatus = handler.thisPromise._status;
-        var nextValue = handler.thisPromise._value;
-
-        try {
-          if (nextStatus === STATUS_RESOLVED) {
-            if (typeof handler.onResolve === 'function') {
-              nextValue = handler.onResolve(nextValue);
-            }
-          } else if (typeof handler.onReject === 'function') {
-              nextValue = handler.onReject(nextValue);
-              nextStatus = STATUS_RESOLVED;
-
-              if (handler.thisPromise._unhandledRejection) {
-                this.removeUnhandeledRejection(handler.thisPromise);
-              }
-          }
-        } catch (ex) {
-          nextStatus = STATUS_REJECTED;
-          nextValue = ex;
-        }
-
-        handler.nextPromise._updateStatus(nextStatus, nextValue);
-        if (Date.now() >= timeoutAt) {
-          break;
-        }
-      }
-
-      if (this.handlers.length > 0) {
-        setTimeout(this.runHandlers.bind(this), 0);
-        return;
-      }
-
-      this.running = false;
-    },
-
-    addUnhandledRejection: function addUnhandledRejection(promise) {
-      this.unhandledRejections.push({
-        promise: promise,
-        time: Date.now()
-      });
-      this.scheduleRejectionCheck();
-    },
-
-    removeUnhandeledRejection: function removeUnhandeledRejection(promise) {
-      promise._unhandledRejection = false;
-      for (var i = 0; i < this.unhandledRejections.length; i++) {
-        if (this.unhandledRejections[i].promise === promise) {
-          this.unhandledRejections.splice(i);
-          i--;
-        }
-      }
-    },
-
-    scheduleRejectionCheck: function scheduleRejectionCheck() {
-      if (this.pendingRejectionCheck) {
-        return;
-      }
-      this.pendingRejectionCheck = true;
-      setTimeout(function rejectionCheck() {
-        this.pendingRejectionCheck = false;
-        var now = Date.now();
-        for (var i = 0; i < this.unhandledRejections.length; i++) {
-          if (now - this.unhandledRejections[i].time > REJECTION_TIMEOUT) {
-            var unhandled = this.unhandledRejections[i].promise._value;
-            var msg = 'Unhandled rejection: ' + unhandled;
-            if (unhandled.stack) {
-              msg += '\n' + unhandled.stack;
-            }
-            warn(msg);
-            this.unhandledRejections.splice(i);
-            i--;
-          }
-        }
-        if (this.unhandledRejections.length) {
-          this.scheduleRejectionCheck();
-        }
-      }.bind(this), REJECTION_TIMEOUT);
-    }
-  };
-
-  function Promise(resolver) {
-    this._status = STATUS_PENDING;
-    this._handlers = [];
-    try {
-      resolver.call(this, this._resolve.bind(this), this._reject.bind(this));
-    } catch (e) {
-      this._reject(e);
-    }
-  }
-  /**
-   * Builds a promise that is resolved when all the passed in promises are
-   * resolved.
-   * @param {array} array of data and/or promises to wait for.
-   * @return {Promise} New dependant promise.
-   */
-  Promise.all = function Promise_all(promises) {
-    var resolveAll, rejectAll;
-    var deferred = new Promise(function (resolve, reject) {
-      resolveAll = resolve;
-      rejectAll = reject;
-    });
-    var unresolved = promises.length;
-    var results = [];
-    if (unresolved === 0) {
-      resolveAll(results);
-      return deferred;
-    }
-    function reject(reason) {
-      if (deferred._status === STATUS_REJECTED) {
-        return;
-      }
-      results = [];
-      rejectAll(reason);
-    }
-    for (var i = 0, ii = promises.length; i < ii; ++i) {
-      var promise = promises[i];
-      var resolve = (function(i) {
-        return function(value) {
-          if (deferred._status === STATUS_REJECTED) {
-            return;
-          }
-          results[i] = value;
-          unresolved--;
-          if (unresolved === 0) {
-            resolveAll(results);
-          }
-        };
-      })(i);
-      if (Promise.isPromise(promise)) {
-        promise.then(resolve, reject);
-      } else {
-        resolve(promise);
-      }
-    }
-    return deferred;
-  };
-
-  /**
-   * Checks if the value is likely a promise (has a 'then' function).
-   * @return {boolean} true if value is thenable
-   */
-  Promise.isPromise = function Promise_isPromise(value) {
-    return value && typeof value.then === 'function';
-  };
-
-  /**
-   * Creates resolved promise
-   * @param value resolve value
-   * @returns {Promise}
-   */
-  Promise.resolve = function Promise_resolve(value) {
-    return new Promise(function (resolve) { resolve(value); });
-  };
-
-  /**
-   * Creates rejected promise
-   * @param reason rejection value
-   * @returns {Promise}
-   */
-  Promise.reject = function Promise_reject(reason) {
-    return new Promise(function (resolve, reject) { reject(reason); });
-  };
-
-  Promise.prototype = {
-    _status: null,
-    _value: null,
-    _handlers: null,
-    _unhandledRejection: null,
-
-    _updateStatus: function Promise__updateStatus(status, value) {
-      if (this._status === STATUS_RESOLVED ||
-          this._status === STATUS_REJECTED) {
-        return;
-      }
-
-      if (status === STATUS_RESOLVED &&
-          Promise.isPromise(value)) {
-        value.then(this._updateStatus.bind(this, STATUS_RESOLVED),
-                   this._updateStatus.bind(this, STATUS_REJECTED));
-        return;
-      }
-
-      this._status = status;
-      this._value = value;
-
-      if (status === STATUS_REJECTED && this._handlers.length === 0) {
-        this._unhandledRejection = true;
-        HandlerManager.addUnhandledRejection(this);
-      }
-
-      HandlerManager.scheduleHandlers(this);
-    },
-
-    _resolve: function Promise_resolve(value) {
-      this._updateStatus(STATUS_RESOLVED, value);
-    },
-
-    _reject: function Promise_reject(reason) {
-      this._updateStatus(STATUS_REJECTED, reason);
-    },
-
-    then: function Promise_then(onResolve, onReject) {
-      var nextPromise = new Promise(function (resolve, reject) {
-        this.resolve = resolve;
-        this.reject = reject;
-      });
-      this._handlers.push({
-        thisPromise: this,
-        onResolve: onResolve,
-        onReject: onReject,
-        nextPromise: nextPromise
-      });
-      HandlerManager.scheduleHandlers(this);
-      return nextPromise;
-    },
-
-    catch: function Promise_catch(onReject) {
-      return this.then(undefined, onReject);
-    }
-  };
-
-  globalScope.Promise = Promise;
-//#else
-//throw new Error('DOM Promise is not present');
-//#endif
-})();
 
 var StatTimer = (function StatTimerClosure() {
   function rpad(str, pad, length) {
@@ -1469,7 +1155,7 @@ var StatTimer = (function StatTimerClosure() {
       this.times.push({
         'name': name,
         'start': this.started[name],
-        'end': Date.now()
+        'end': Date.now(),
       });
       // Remove timer from started so it can be called again.
       delete this.started[name];
@@ -1492,19 +1178,16 @@ var StatTimer = (function StatTimerClosure() {
         out += rpad(span['name'], ' ', longest) + ' ' + duration + 'ms\n';
       }
       return out;
-    }
+    },
   };
   return StatTimer;
 })();
 
 var createBlob = function createBlob(data, contentType) {
   if (typeof Blob !== 'undefined') {
-    return new Blob([data], { type: contentType });
+    return new Blob([data], { type: contentType, });
   }
-  // Blob builder is deprecated in FF14 and removed in FF18.
-  var bb = new MozBlobBuilder();
-  bb.append(data);
-  return bb.getBlob(contentType);
+  throw new Error('The "Blob" constructor is not supported.');
 };
 
 var createObjectURL = (function createObjectURLClosure() {
@@ -1512,9 +1195,8 @@ var createObjectURL = (function createObjectURLClosure() {
   var digits =
     'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
 
-  return function createObjectURL(data, contentType, forceDataSchema) {
-    if (!forceDataSchema &&
-        typeof URL !== 'undefined' && URL.createObjectURL) {
+  return function createObjectURL(data, contentType, forceDataSchema = false) {
+    if (!forceDataSchema && URL.createObjectURL) {
       var blob = createBlob(data, contentType);
       return URL.createObjectURL(blob);
     }
@@ -1533,24 +1215,50 @@ var createObjectURL = (function createObjectURLClosure() {
   };
 })();
 
+function resolveCall(fn, args, thisArg = null) {
+  if (!fn) {
+    return Promise.resolve(undefined);
+  }
+  return new Promise((resolve, reject) => {
+    resolve(fn.apply(thisArg, args));
+  });
+}
+
+function resolveOrReject(capability, success, reason) {
+  if (success) {
+    capability.resolve();
+  } else {
+    capability.reject(reason);
+  }
+}
+
+function finalize(promise) {
+  return Promise.resolve(promise).catch(() => {});
+}
+
 function MessageHandler(sourceName, targetName, comObj) {
   this.sourceName = sourceName;
   this.targetName = targetName;
   this.comObj = comObj;
-  this.callbackIndex = 1;
+  this.callbackId = 1;
+  this.streamId = 1;
   this.postMessageTransfers = true;
-  var callbacksCapabilities = this.callbacksCapabilities = Object.create(null);
-  var ah = this.actionHandler = Object.create(null);
+  this.streamSinks = Object.create(null);
+  this.streamControllers = Object.create(null);
+  let callbacksCapabilities = this.callbacksCapabilities = Object.create(null);
+  let ah = this.actionHandler = Object.create(null);
 
-  this._onComObjOnMessage = function messageHandlerComObjOnMessage(event) {
-    var data = event.data;
+  this._onComObjOnMessage = (event) => {
+    let data = event.data;
     if (data.targetName !== this.sourceName) {
       return;
     }
-    if (data.isReply) {
-      var callbackId = data.callbackId;
+    if (data.stream) {
+      this._processStreamMessage(data);
+    } else if (data.isReply) {
+      let callbackId = data.callbackId;
       if (data.callbackId in callbacksCapabilities) {
-        var callback = callbacksCapabilities[callbackId];
+        let callback = callbacksCapabilities[callbackId];
         delete callbacksCapabilities[callbackId];
         if ('error' in data) {
           callback.reject(data.error);
@@ -1561,45 +1269,47 @@ function MessageHandler(sourceName, targetName, comObj) {
         error('Cannot resolve callback ' + callbackId);
       }
     } else if (data.action in ah) {
-      var action = ah[data.action];
+      let action = ah[data.action];
       if (data.callbackId) {
-        var sourceName = this.sourceName;
-        var targetName = data.sourceName;
+        let sourceName = this.sourceName;
+        let targetName = data.sourceName;
         Promise.resolve().then(function () {
           return action[0].call(action[1], data.data);
-        }).then(function (result) {
+        }).then((result) => {
           comObj.postMessage({
-            sourceName: sourceName,
-            targetName: targetName,
+            sourceName,
+            targetName,
             isReply: true,
             callbackId: data.callbackId,
-            data: result
+            data: result,
           });
-        }, function (reason) {
+        }, (reason) => {
           if (reason instanceof Error) {
             // Serialize error to avoid "DataCloneError"
             reason = reason + '';
           }
           comObj.postMessage({
-            sourceName: sourceName,
-            targetName: targetName,
+            sourceName,
+            targetName,
             isReply: true,
             callbackId: data.callbackId,
-            error: reason
+            error: reason,
           });
         });
+      } else if (data.streamId) {
+        this._createStreamSink(data);
       } else {
         action[0].call(action[1], data.data);
       }
     } else {
       error('Unknown action from worker: ' + data.action);
     }
-  }.bind(this);
+  };
   comObj.addEventListener('message', this._onComObjOnMessage);
 }
 
 MessageHandler.prototype = {
-  on: function messageHandlerOn(actionName, handler, scope) {
+  on(actionName, handler, scope) {
     var ah = this.actionHandler;
     if (ah[actionName]) {
       error('There is already an actionName called "' + actionName + '"');
@@ -1608,36 +1318,35 @@ MessageHandler.prototype = {
   },
   /**
    * Sends a message to the comObj to invoke the action with the supplied data.
-   * @param {String} actionName Action to call.
-   * @param {JSON} data JSON data to send.
-   * @param {Array} [transfers] Optional list of transfers/ArrayBuffers
+   * @param {String} actionName - Action to call.
+   * @param {JSON} data - JSON data to send.
+   * @param {Array} [transfers] - Optional list of transfers/ArrayBuffers
    */
-  send: function messageHandlerSend(actionName, data, transfers) {
+  send(actionName, data, transfers) {
     var message = {
       sourceName: this.sourceName,
       targetName: this.targetName,
       action: actionName,
-      data: data
+      data,
     };
     this.postMessage(message, transfers);
   },
   /**
    * Sends a message to the comObj to invoke the action with the supplied data.
-   * Expects that other side will callback with the response.
-   * @param {String} actionName Action to call.
-   * @param {JSON} data JSON data to send.
-   * @param {Array} [transfers] Optional list of transfers/ArrayBuffers.
+   * Expects that the other side will callback with the response.
+   * @param {String} actionName - Action to call.
+   * @param {JSON} data - JSON data to send.
+   * @param {Array} [transfers] - Optional list of transfers/ArrayBuffers.
    * @returns {Promise} Promise to be resolved with response data.
    */
-  sendWithPromise:
-    function messageHandlerSendWithPromise(actionName, data, transfers) {
-    var callbackId = this.callbackIndex++;
+  sendWithPromise(actionName, data, transfers) {
+    var callbackId = this.callbackId++;
     var message = {
       sourceName: this.sourceName,
       targetName: this.targetName,
       action: actionName,
-      data: data,
-      callbackId: callbackId
+      data,
+      callbackId,
     };
     var capability = createPromiseCapability();
     this.callbacksCapabilities[callbackId] = capability;
@@ -1649,12 +1358,228 @@ MessageHandler.prototype = {
     return capability.promise;
   },
   /**
+   * Sends a message to the comObj to invoke the action with the supplied data.
+   * Expect that the other side will callback to signal 'start_complete'.
+   * @param {String} actionName - Action to call.
+   * @param {JSON} data - JSON data to send.
+   * @param {Object} queueingStrategy - strategy to signal backpressure based on
+   *                 internal queue.
+   * @param {Array} [transfers] - Optional list of transfers/ArrayBuffers.
+   * @return {ReadableStream} ReadableStream to read data in chunks.
+   */
+  sendWithStream(actionName, data, queueingStrategy, transfers) {
+    let streamId = this.streamId++;
+    let sourceName = this.sourceName;
+    let targetName = this.targetName;
+
+    return new ReadableStream({
+      start: (controller) => {
+        let startCapability = createPromiseCapability();
+        this.streamControllers[streamId] = {
+          controller,
+          startCall: startCapability,
+          isClosed: false,
+        };
+        this.postMessage({
+          sourceName,
+          targetName,
+          action: actionName,
+          streamId,
+          data,
+          desiredSize: controller.desiredSize,
+        });
+        // Return Promise for Async process, to signal success/failure.
+        return startCapability.promise;
+      },
+
+      pull: (controller) => {
+        let pullCapability = createPromiseCapability();
+        this.streamControllers[streamId].pullCall = pullCapability;
+        this.postMessage({
+          sourceName,
+          targetName,
+          stream: 'pull',
+          streamId,
+          desiredSize: controller.desiredSize,
+        });
+        // Returning Promise will not call "pull"
+        // again until current pull is resolved.
+        return pullCapability.promise;
+      },
+
+      cancel: (reason) => {
+        let cancelCapability = createPromiseCapability();
+        this.streamControllers[streamId].cancelCall = cancelCapability;
+        this.streamControllers[streamId].isClosed = true;
+        this.postMessage({
+          sourceName,
+          targetName,
+          stream: 'cancel',
+          reason,
+          streamId,
+        });
+        // Return Promise to signal success or failure.
+        return cancelCapability.promise;
+      },
+    }, queueingStrategy);
+  },
+
+  _createStreamSink(data) {
+    let self = this;
+    let action = this.actionHandler[data.action];
+    let streamId = data.streamId;
+    let desiredSize = data.desiredSize;
+    let sourceName = this.sourceName;
+    let targetName = data.sourceName;
+    let capability = createPromiseCapability();
+
+    let sendStreamRequest = ({ stream, chunk, success, reason, }) => {
+      this.comObj.postMessage({ sourceName, targetName, stream, streamId,
+                                chunk, success, reason, });
+    };
+
+    let streamSink = {
+      enqueue(chunk, size = 1) {
+        let lastDesiredSize = this.desiredSize;
+        this.desiredSize -= size;
+        // Enqueue decreases the desiredSize property of sink,
+        // so when it changes from positive to negative,
+        // set ready as unresolved promise.
+        if (lastDesiredSize > 0 && this.desiredSize <= 0) {
+          this.sinkCapability = createPromiseCapability();
+          this.ready = this.sinkCapability.promise;
+        }
+        sendStreamRequest({ stream: 'enqueue', chunk, });
+      },
+
+      close() {
+        sendStreamRequest({ stream: 'close', });
+        delete self.streamSinks[streamId];
+      },
+
+      error(reason) {
+        sendStreamRequest({ stream: 'error', reason, });
+      },
+
+      sinkCapability: capability,
+      onPull: null,
+      onCancel: null,
+      desiredSize,
+      ready: null,
+    };
+
+    streamSink.sinkCapability.resolve();
+    streamSink.ready = streamSink.sinkCapability.promise;
+    this.streamSinks[streamId] = streamSink;
+    resolveCall(action[0], [data.data, streamSink], action[1]).then(() => {
+      sendStreamRequest({ stream: 'start_complete', success: true, });
+    }, (reason) => {
+      sendStreamRequest({ stream: 'start_complete', success: false, reason, });
+    });
+  },
+
+  _processStreamMessage(data) {
+    let sourceName = this.sourceName;
+    let targetName = data.sourceName;
+    let streamId = data.streamId;
+
+    let sendStreamResponse = ({ stream, success, reason, }) => {
+      this.comObj.postMessage({ sourceName, targetName, stream,
+                                success, streamId, reason, });
+    };
+
+    let deleteStreamController = () => {
+      // Delete streamController only when start, pull and
+      // cancel callbacks are resolved, to avoid "TypeError".
+      Promise.all([
+        this.streamControllers[data.streamId].startCall,
+        this.streamControllers[data.streamId].pullCall,
+        this.streamControllers[data.streamId].cancelCall
+      ].map(function(capability) {
+        return capability && finalize(capability.promise);
+      })).then(() => {
+        delete this.streamControllers[data.streamId];
+      });
+    };
+
+    switch (data.stream) {
+      case 'start_complete':
+        resolveOrReject(this.streamControllers[data.streamId].startCall,
+                        data.success, data.reason);
+        break;
+      case 'pull_complete':
+        resolveOrReject(this.streamControllers[data.streamId].pullCall,
+                        data.success, data.reason);
+        break;
+      case 'pull':
+        // Ignore any pull after close is called.
+        if (!this.streamSinks[data.streamId]) {
+          sendStreamResponse({ stream: 'pull_complete', success: true, });
+          break;
+        }
+        // Pull increases the desiredSize property of sink,
+        // so when it changes from negative to positive,
+        // set ready property as resolved promise.
+        if (this.streamSinks[data.streamId].desiredSize <= 0 &&
+            data.desiredSize > 0) {
+          this.streamSinks[data.streamId].sinkCapability.resolve();
+        }
+        // Reset desiredSize property of sink on every pull.
+        this.streamSinks[data.streamId].desiredSize = data.desiredSize;
+        resolveCall(this.streamSinks[data.streamId].onPull).then(() => {
+          sendStreamResponse({ stream: 'pull_complete', success: true, });
+        }, (reason) => {
+          sendStreamResponse({ stream: 'pull_complete',
+                               success: false, reason, });
+        });
+        break;
+      case 'enqueue':
+        if (!this.streamControllers[data.streamId].isClosed) {
+          this.streamControllers[data.streamId].controller.enqueue(data.chunk);
+        }
+        break;
+      case 'close':
+        if (this.streamControllers[data.streamId].isClosed) {
+          break;
+        }
+        this.streamControllers[data.streamId].isClosed = true;
+        this.streamControllers[data.streamId].controller.close();
+        deleteStreamController();
+        break;
+      case 'error':
+        this.streamControllers[data.streamId].controller.error(data.reason);
+        deleteStreamController();
+        break;
+      case 'cancel_complete':
+        resolveOrReject(this.streamControllers[data.streamId].cancelCall,
+                        data.success, data.reason);
+        deleteStreamController();
+        break;
+      case 'cancel':
+        if (!this.streamSinks[data.streamId]) {
+          break;
+        }
+        resolveCall(this.streamSinks[data.streamId].onCancel,
+                    [data.reason]).then(() => {
+          sendStreamResponse({ stream: 'cancel_complete', success: true, });
+        }, (reason) => {
+          sendStreamResponse({ stream: 'cancel_complete',
+                               success: false, reason, });
+        });
+        delete this.streamSinks[data.streamId];
+        break;
+      default:
+        throw new Error('Unexpected stream case');
+    }
+  },
+
+  /**
    * Sends raw message to the comObj.
    * @private
-   * @param message {Object} Raw message.
+   * @param {Object} message - Raw message.
    * @param transfers List of transfers/ArrayBuffers, or undefined.
    */
-  postMessage: function (message, transfers) {
+  postMessage(message, transfers) {
     if (transfers && this.postMessageTransfers) {
       this.comObj.postMessage(message, transfers);
     } else {
@@ -1662,9 +1587,9 @@ MessageHandler.prototype = {
     }
   },
 
-  destroy: function () {
+  destroy() {
     this.comObj.removeEventListener('message', this._onComObjOnMessage);
-  }
+  },
 };
 
 function loadJpegStream(id, imageUrl, objs) {
@@ -1679,688 +1604,74 @@ function loadJpegStream(id, imageUrl, objs) {
   img.src = imageUrl;
 }
 
-//#if !(MOZCENTRAL)
-//// Polyfill from https://github.com/Polymer/URL
-/* Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/ */
-(function checkURLConstructor(scope) {
-  /* jshint ignore:start */
-
-  // feature detect for URL constructor
-  var hasWorkingUrl = false;
-  try {
-    if (typeof URL === 'function' &&
-        typeof URL.prototype === 'object' &&
-        ('origin' in URL.prototype)) {
-      var u = new URL('b', 'http://a');
-      u.pathname = 'c%20d';
-      hasWorkingUrl = u.href === 'http://a/c%20d';
-    }
-  } catch(e) { }
-
-  if (hasWorkingUrl)
-    return;
-
-  var relative = Object.create(null);
-  relative['ftp'] = 21;
-  relative['file'] = 0;
-  relative['gopher'] = 70;
-  relative['http'] = 80;
-  relative['https'] = 443;
-  relative['ws'] = 80;
-  relative['wss'] = 443;
-
-  var relativePathDotMapping = Object.create(null);
-  relativePathDotMapping['%2e'] = '.';
-  relativePathDotMapping['.%2e'] = '..';
-  relativePathDotMapping['%2e.'] = '..';
-  relativePathDotMapping['%2e%2e'] = '..';
-
-  function isRelativeScheme(scheme) {
-    return relative[scheme] !== undefined;
-  }
-
-  function invalid() {
-    clear.call(this);
-    this._isInvalid = true;
-  }
-
-  function IDNAToASCII(h) {
-    if ('' == h) {
-      invalid.call(this)
-    }
-    // XXX
-    return h.toLowerCase()
-  }
-
-  function percentEscape(c) {
-    var unicode = c.charCodeAt(0);
-    if (unicode > 0x20 &&
-       unicode < 0x7F &&
-       // " # < > ? `
-       [0x22, 0x23, 0x3C, 0x3E, 0x3F, 0x60].indexOf(unicode) == -1
-      ) {
-      return c;
-    }
-    return encodeURIComponent(c);
-  }
-
-  function percentEscapeQuery(c) {
-    // XXX This actually needs to encode c using encoding and then
-    // convert the bytes one-by-one.
-
-    var unicode = c.charCodeAt(0);
-    if (unicode > 0x20 &&
-       unicode < 0x7F &&
-       // " # < > ` (do not escape '?')
-       [0x22, 0x23, 0x3C, 0x3E, 0x60].indexOf(unicode) == -1
-      ) {
-      return c;
-    }
-    return encodeURIComponent(c);
-  }
-
-  var EOF = undefined,
-      ALPHA = /[a-zA-Z]/,
-      ALPHANUMERIC = /[a-zA-Z0-9\+\-\.]/;
-
-  function parse(input, stateOverride, base) {
-    function err(message) {
-      errors.push(message)
-    }
-
-    var state = stateOverride || 'scheme start',
-        cursor = 0,
-        buffer = '',
-        seenAt = false,
-        seenBracket = false,
-        errors = [];
-
-    loop: while ((input[cursor - 1] != EOF || cursor == 0) && !this._isInvalid) {
-      var c = input[cursor];
-      switch (state) {
-        case 'scheme start':
-          if (c && ALPHA.test(c)) {
-            buffer += c.toLowerCase(); // ASCII-safe
-            state = 'scheme';
-          } else if (!stateOverride) {
-            buffer = '';
-            state = 'no scheme';
-            continue;
-          } else {
-            err('Invalid scheme.');
-            break loop;
-          }
-          break;
-
-        case 'scheme':
-          if (c && ALPHANUMERIC.test(c)) {
-            buffer += c.toLowerCase(); // ASCII-safe
-          } else if (':' == c) {
-            this._scheme = buffer;
-            buffer = '';
-            if (stateOverride) {
-              break loop;
-            }
-            if (isRelativeScheme(this._scheme)) {
-              this._isRelative = true;
-            }
-            if ('file' == this._scheme) {
-              state = 'relative';
-            } else if (this._isRelative && base && base._scheme == this._scheme) {
-              state = 'relative or authority';
-            } else if (this._isRelative) {
-              state = 'authority first slash';
-            } else {
-              state = 'scheme data';
-            }
-          } else if (!stateOverride) {
-            buffer = '';
-            cursor = 0;
-            state = 'no scheme';
-            continue;
-          } else if (EOF == c) {
-            break loop;
-          } else {
-            err('Code point not allowed in scheme: ' + c)
-            break loop;
-          }
-          break;
-
-        case 'scheme data':
-          if ('?' == c) {
-            this._query = '?';
-            state = 'query';
-          } else if ('#' == c) {
-            this._fragment = '#';
-            state = 'fragment';
-          } else {
-            // XXX error handling
-            if (EOF != c && '\t' != c && '\n' != c && '\r' != c) {
-              this._schemeData += percentEscape(c);
-            }
-          }
-          break;
-
-        case 'no scheme':
-          if (!base || !(isRelativeScheme(base._scheme))) {
-            err('Missing scheme.');
-            invalid.call(this);
-          } else {
-            state = 'relative';
-            continue;
-          }
-          break;
-
-        case 'relative or authority':
-          if ('/' == c && '/' == input[cursor+1]) {
-            state = 'authority ignore slashes';
-          } else {
-            err('Expected /, got: ' + c);
-            state = 'relative';
-            continue
-          }
-          break;
-
-        case 'relative':
-          this._isRelative = true;
-          if ('file' != this._scheme)
-            this._scheme = base._scheme;
-          if (EOF == c) {
-            this._host = base._host;
-            this._port = base._port;
-            this._path = base._path.slice();
-            this._query = base._query;
-            this._username = base._username;
-            this._password = base._password;
-            break loop;
-          } else if ('/' == c || '\\' == c) {
-            if ('\\' == c)
-              err('\\ is an invalid code point.');
-            state = 'relative slash';
-          } else if ('?' == c) {
-            this._host = base._host;
-            this._port = base._port;
-            this._path = base._path.slice();
-            this._query = '?';
-            this._username = base._username;
-            this._password = base._password;
-            state = 'query';
-          } else if ('#' == c) {
-            this._host = base._host;
-            this._port = base._port;
-            this._path = base._path.slice();
-            this._query = base._query;
-            this._fragment = '#';
-            this._username = base._username;
-            this._password = base._password;
-            state = 'fragment';
-          } else {
-            var nextC = input[cursor+1]
-            var nextNextC = input[cursor+2]
-            if (
-              'file' != this._scheme || !ALPHA.test(c) ||
-              (nextC != ':' && nextC != '|') ||
-              (EOF != nextNextC && '/' != nextNextC && '\\' != nextNextC && '?' != nextNextC && '#' != nextNextC)) {
-              this._host = base._host;
-              this._port = base._port;
-              this._username = base._username;
-              this._password = base._password;
-              this._path = base._path.slice();
-              this._path.pop();
-            }
-            state = 'relative path';
-            continue;
-          }
-          break;
-
-        case 'relative slash':
-          if ('/' == c || '\\' == c) {
-            if ('\\' == c) {
-              err('\\ is an invalid code point.');
-            }
-            if ('file' == this._scheme) {
-              state = 'file host';
-            } else {
-              state = 'authority ignore slashes';
-            }
-          } else {
-            if ('file' != this._scheme) {
-              this._host = base._host;
-              this._port = base._port;
-              this._username = base._username;
-              this._password = base._password;
-            }
-            state = 'relative path';
-            continue;
-          }
-          break;
-
-        case 'authority first slash':
-          if ('/' == c) {
-            state = 'authority second slash';
-          } else {
-            err("Expected '/', got: " + c);
-            state = 'authority ignore slashes';
-            continue;
-          }
-          break;
-
-        case 'authority second slash':
-          state = 'authority ignore slashes';
-          if ('/' != c) {
-            err("Expected '/', got: " + c);
-            continue;
-          }
-          break;
-
-        case 'authority ignore slashes':
-          if ('/' != c && '\\' != c) {
-            state = 'authority';
-            continue;
-          } else {
-            err('Expected authority, got: ' + c);
-          }
-          break;
-
-        case 'authority':
-          if ('@' == c) {
-            if (seenAt) {
-              err('@ already seen.');
-              buffer += '%40';
-            }
-            seenAt = true;
-            for (var i = 0; i < buffer.length; i++) {
-              var cp = buffer[i];
-              if ('\t' == cp || '\n' == cp || '\r' == cp) {
-                err('Invalid whitespace in authority.');
-                continue;
-              }
-              // XXX check URL code points
-              if (':' == cp && null === this._password) {
-                this._password = '';
-                continue;
-              }
-              var tempC = percentEscape(cp);
-              (null !== this._password) ? this._password += tempC : this._username += tempC;
-            }
-            buffer = '';
-          } else if (EOF == c || '/' == c || '\\' == c || '?' == c || '#' == c) {
-            cursor -= buffer.length;
-            buffer = '';
-            state = 'host';
-            continue;
-          } else {
-            buffer += c;
-          }
-          break;
-
-        case 'file host':
-          if (EOF == c || '/' == c || '\\' == c || '?' == c || '#' == c) {
-            if (buffer.length == 2 && ALPHA.test(buffer[0]) && (buffer[1] == ':' || buffer[1] == '|')) {
-              state = 'relative path';
-            } else if (buffer.length == 0) {
-              state = 'relative path start';
-            } else {
-              this._host = IDNAToASCII.call(this, buffer);
-              buffer = '';
-              state = 'relative path start';
-            }
-            continue;
-          } else if ('\t' == c || '\n' == c || '\r' == c) {
-            err('Invalid whitespace in file host.');
-          } else {
-            buffer += c;
-          }
-          break;
-
-        case 'host':
-        case 'hostname':
-          if (':' == c && !seenBracket) {
-            // XXX host parsing
-            this._host = IDNAToASCII.call(this, buffer);
-            buffer = '';
-            state = 'port';
-            if ('hostname' == stateOverride) {
-              break loop;
-            }
-          } else if (EOF == c || '/' == c || '\\' == c || '?' == c || '#' == c) {
-            this._host = IDNAToASCII.call(this, buffer);
-            buffer = '';
-            state = 'relative path start';
-            if (stateOverride) {
-              break loop;
-            }
-            continue;
-          } else if ('\t' != c && '\n' != c && '\r' != c) {
-            if ('[' == c) {
-              seenBracket = true;
-            } else if (']' == c) {
-              seenBracket = false;
-            }
-            buffer += c;
-          } else {
-            err('Invalid code point in host/hostname: ' + c);
-          }
-          break;
-
-        case 'port':
-          if (/[0-9]/.test(c)) {
-            buffer += c;
-          } else if (EOF == c || '/' == c || '\\' == c || '?' == c || '#' == c || stateOverride) {
-            if ('' != buffer) {
-              var temp = parseInt(buffer, 10);
-              if (temp != relative[this._scheme]) {
-                this._port = temp + '';
-              }
-              buffer = '';
-            }
-            if (stateOverride) {
-              break loop;
-            }
-            state = 'relative path start';
-            continue;
-          } else if ('\t' == c || '\n' == c || '\r' == c) {
-            err('Invalid code point in port: ' + c);
-          } else {
-            invalid.call(this);
-          }
-          break;
-
-        case 'relative path start':
-          if ('\\' == c)
-            err("'\\' not allowed in path.");
-          state = 'relative path';
-          if ('/' != c && '\\' != c) {
-            continue;
-          }
-          break;
-
-        case 'relative path':
-          if (EOF == c || '/' == c || '\\' == c || (!stateOverride && ('?' == c || '#' == c))) {
-            if ('\\' == c) {
-              err('\\ not allowed in relative path.');
-            }
-            var tmp;
-            if (tmp = relativePathDotMapping[buffer.toLowerCase()]) {
-              buffer = tmp;
-            }
-            if ('..' == buffer) {
-              this._path.pop();
-              if ('/' != c && '\\' != c) {
-                this._path.push('');
-              }
-            } else if ('.' == buffer && '/' != c && '\\' != c) {
-              this._path.push('');
-            } else if ('.' != buffer) {
-              if ('file' == this._scheme && this._path.length == 0 && buffer.length == 2 && ALPHA.test(buffer[0]) && buffer[1] == '|') {
-                buffer = buffer[0] + ':';
-              }
-              this._path.push(buffer);
-            }
-            buffer = '';
-            if ('?' == c) {
-              this._query = '?';
-              state = 'query';
-            } else if ('#' == c) {
-              this._fragment = '#';
-              state = 'fragment';
-            }
-          } else if ('\t' != c && '\n' != c && '\r' != c) {
-            buffer += percentEscape(c);
-          }
-          break;
-
-        case 'query':
-          if (!stateOverride && '#' == c) {
-            this._fragment = '#';
-            state = 'fragment';
-          } else if (EOF != c && '\t' != c && '\n' != c && '\r' != c) {
-            this._query += percentEscapeQuery(c);
-          }
-          break;
-
-        case 'fragment':
-          if (EOF != c && '\t' != c && '\n' != c && '\r' != c) {
-            this._fragment += c;
-          }
-          break;
-      }
-
-      cursor++;
-    }
-  }
-
-  function clear() {
-    this._scheme = '';
-    this._schemeData = '';
-    this._username = '';
-    this._password = null;
-    this._host = '';
-    this._port = '';
-    this._path = [];
-    this._query = '';
-    this._fragment = '';
-    this._isInvalid = false;
-    this._isRelative = false;
-  }
-
-  // Does not process domain names or IP addresses.
-  // Does not handle encoding for the query parameter.
-  function jURL(url, base /* , encoding */) {
-    if (base !== undefined && !(base instanceof jURL))
-      base = new jURL(String(base));
-
-    this._url = url;
-    clear.call(this);
-
-    var input = url.replace(/^[ \t\r\n\f]+|[ \t\r\n\f]+$/g, '');
-    // encoding = encoding || 'utf-8'
-
-    parse.call(this, input, null, base);
-  }
-
-  jURL.prototype = {
-    toString: function() {
-      return this.href;
-    },
-    get href() {
-      if (this._isInvalid)
-        return this._url;
-
-      var authority = '';
-      if ('' != this._username || null != this._password) {
-        authority = this._username +
-            (null != this._password ? ':' + this._password : '') + '@';
-      }
-
-      return this.protocol +
-          (this._isRelative ? '//' + authority + this.host : '') +
-          this.pathname + this._query + this._fragment;
-    },
-    set href(href) {
-      clear.call(this);
-      parse.call(this, href);
-    },
-
-    get protocol() {
-      return this._scheme + ':';
-    },
-    set protocol(protocol) {
-      if (this._isInvalid)
-        return;
-      parse.call(this, protocol + ':', 'scheme start');
-    },
-
-    get host() {
-      return this._isInvalid ? '' : this._port ?
-          this._host + ':' + this._port : this._host;
-    },
-    set host(host) {
-      if (this._isInvalid || !this._isRelative)
-        return;
-      parse.call(this, host, 'host');
-    },
-
-    get hostname() {
-      return this._host;
-    },
-    set hostname(hostname) {
-      if (this._isInvalid || !this._isRelative)
-        return;
-      parse.call(this, hostname, 'hostname');
-    },
-
-    get port() {
-      return this._port;
-    },
-    set port(port) {
-      if (this._isInvalid || !this._isRelative)
-        return;
-      parse.call(this, port, 'port');
-    },
-
-    get pathname() {
-      return this._isInvalid ? '' : this._isRelative ?
-          '/' + this._path.join('/') : this._schemeData;
-    },
-    set pathname(pathname) {
-      if (this._isInvalid || !this._isRelative)
-        return;
-      this._path = [];
-      parse.call(this, pathname, 'relative path start');
-    },
-
-    get search() {
-      return this._isInvalid || !this._query || '?' == this._query ?
-          '' : this._query;
-    },
-    set search(search) {
-      if (this._isInvalid || !this._isRelative)
-        return;
-      this._query = '?';
-      if ('?' == search[0])
-        search = search.slice(1);
-      parse.call(this, search, 'query');
-    },
-
-    get hash() {
-      return this._isInvalid || !this._fragment || '#' == this._fragment ?
-          '' : this._fragment;
-    },
-    set hash(hash) {
-      if (this._isInvalid)
-        return;
-      this._fragment = '#';
-      if ('#' == hash[0])
-        hash = hash.slice(1);
-      parse.call(this, hash, 'fragment');
-    },
-
-    get origin() {
-      var host;
-      if (this._isInvalid || !this._scheme) {
-        return '';
-      }
-      // javascript: Gecko returns String(""), WebKit/Blink String("null")
-      // Gecko throws error for "data://"
-      // data: Gecko returns "", Blink returns "data://", WebKit returns "null"
-      // Gecko returns String("") for file: mailto:
-      // WebKit/Blink returns String("SCHEME://") for file: mailto:
-      switch (this._scheme) {
-        case 'data':
-        case 'file':
-        case 'javascript':
-        case 'mailto':
-          return 'null';
-      }
-      host = this.host;
-      if (!host) {
-        return '';
-      }
-      return this._scheme + '://' + host;
-    }
-  };
-
-  // Copy over the static methods
-  var OriginalURL = scope.URL;
-  if (OriginalURL) {
-    jURL.createObjectURL = function(blob) {
-      // IE extension allows a second optional options argument.
-      // http://msdn.microsoft.com/en-us/library/ie/hh772302(v=vs.85).aspx
-      return OriginalURL.createObjectURL.apply(OriginalURL, arguments);
-    };
-    jURL.revokeObjectURL = function(url) {
-      OriginalURL.revokeObjectURL(url);
-    };
-  }
-
-  scope.URL = jURL;
-  /* jshint ignore:end */
-})(globalScope);
-//#endif
-
-exports.FONT_IDENTITY_MATRIX = FONT_IDENTITY_MATRIX;
-exports.IDENTITY_MATRIX = IDENTITY_MATRIX;
-exports.OPS = OPS;
-exports.VERBOSITY_LEVELS = VERBOSITY_LEVELS;
-exports.UNSUPPORTED_FEATURES = UNSUPPORTED_FEATURES;
-exports.AnnotationBorderStyleType = AnnotationBorderStyleType;
-exports.AnnotationFlag = AnnotationFlag;
-exports.AnnotationType = AnnotationType;
-exports.FontType = FontType;
-exports.ImageKind = ImageKind;
-exports.InvalidPDFException = InvalidPDFException;
-exports.MessageHandler = MessageHandler;
-exports.MissingDataException = MissingDataException;
-exports.MissingPDFException = MissingPDFException;
-exports.NotImplementedException = NotImplementedException;
-exports.PageViewport = PageViewport;
-exports.PasswordException = PasswordException;
-exports.PasswordResponses = PasswordResponses;
-exports.StatTimer = StatTimer;
-exports.StreamType = StreamType;
-exports.TextRenderingMode = TextRenderingMode;
-exports.UnexpectedResponseException = UnexpectedResponseException;
-exports.UnknownErrorException = UnknownErrorException;
-exports.Util = Util;
-exports.XRefParseException = XRefParseException;
-exports.arrayByteLength = arrayByteLength;
-exports.arraysToBytes = arraysToBytes;
-exports.assert = assert;
-exports.bytesToString = bytesToString;
-exports.createBlob = createBlob;
-exports.createPromiseCapability = createPromiseCapability;
-exports.createObjectURL = createObjectURL;
-exports.deprecated = deprecated;
-exports.error = error;
-exports.getLookupTableFactory = getLookupTableFactory;
-exports.getVerbosityLevel = getVerbosityLevel;
-exports.globalScope = globalScope;
-exports.info = info;
-exports.isArray = isArray;
-exports.isArrayBuffer = isArrayBuffer;
-exports.isBool = isBool;
-exports.isEmptyObj = isEmptyObj;
-exports.isInt = isInt;
-exports.isNum = isNum;
-exports.isString = isString;
-exports.isSameOrigin = isSameOrigin;
-exports.isValidUrl = isValidUrl;
-exports.isLittleEndian = isLittleEndian;
-exports.isEvalSupported = isEvalSupported;
-exports.loadJpegStream = loadJpegStream;
-exports.log2 = log2;
-exports.readInt8 = readInt8;
-exports.readUint16 = readUint16;
-exports.readUint32 = readUint32;
-exports.removeNullCharacters = removeNullCharacters;
-exports.setVerbosityLevel = setVerbosityLevel;
-exports.shadow = shadow;
-exports.string32 = string32;
-exports.stringToBytes = stringToBytes;
-exports.stringToPDFString = stringToPDFString;
-exports.stringToUTF8String = stringToUTF8String;
-exports.utf8StringToString = utf8StringToString;
-exports.warn = warn;
-}));
+export {
+  FONT_IDENTITY_MATRIX,
+  IDENTITY_MATRIX,
+  OPS,
+  VERBOSITY_LEVELS,
+  UNSUPPORTED_FEATURES,
+  AnnotationBorderStyleType,
+  AnnotationFieldFlag,
+  AnnotationFlag,
+  AnnotationType,
+  FontType,
+  ImageKind,
+  CMapCompressionType,
+  InvalidPDFException,
+  MessageHandler,
+  MissingDataException,
+  MissingPDFException,
+  NativeImageDecoding,
+  NotImplementedException,
+  PageViewport,
+  PasswordException,
+  PasswordResponses,
+  StatTimer,
+  StreamType,
+  TextRenderingMode,
+  UnexpectedResponseException,
+  UnknownErrorException,
+  Util,
+  XRefParseException,
+  arrayByteLength,
+  arraysToBytes,
+  assert,
+  bytesToString,
+  createBlob,
+  createPromiseCapability,
+  createObjectURL,
+  deprecated,
+  error,
+  getLookupTableFactory,
+  getVerbosityLevel,
+  globalScope,
+  info,
+  isArray,
+  isArrayBuffer,
+  isBool,
+  isEmptyObj,
+  isInt,
+  isNum,
+  isString,
+  isSpace,
+  isNodeJS,
+  isSameOrigin,
+  createValidAbsoluteUrl,
+  isLittleEndian,
+  isEvalSupported,
+  loadJpegStream,
+  log2,
+  readInt8,
+  readUint16,
+  readUint32,
+  removeNullCharacters,
+  ReadableStream,
+  setVerbosityLevel,
+  shadow,
+  string32,
+  stringToBytes,
+  stringToPDFString,
+  stringToUTF8String,
+  utf8StringToString,
+  warn,
+};

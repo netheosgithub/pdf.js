@@ -13,34 +13,13 @@
  * limitations under the License.
  */
 
-'use strict';
-
-(function (root, factory) {
-  if (typeof define === 'function' && define.amd) {
-    define('pdfjs/core/cff_parser', ['exports', 'pdfjs/shared/util',
-      'pdfjs/core/charsets', 'pdfjs/core/encodings'], factory);
-  } else if (typeof exports !== 'undefined') {
-    factory(exports, require('../shared/util.js'), require('./charsets.js'),
-      require('./encodings.js'));
-  } else {
-    factory((root.pdfjsCoreCFFParser = {}), root.pdfjsSharedUtil,
-      root.pdfjsCoreCharsets, root.pdfjsCoreEncodings);
-  }
-}(this, function (exports, sharedUtil, coreCharsets, coreEncodings) {
-
-var error = sharedUtil.error;
-var info = sharedUtil.info;
-var bytesToString = sharedUtil.bytesToString;
-var warn = sharedUtil.warn;
-var isArray = sharedUtil.isArray;
-var Util = sharedUtil.Util;
-var stringToBytes = sharedUtil.stringToBytes;
-var assert = sharedUtil.assert;
-var ISOAdobeCharset = coreCharsets.ISOAdobeCharset;
-var ExpertCharset = coreCharsets.ExpertCharset;
-var ExpertSubsetCharset = coreCharsets.ExpertSubsetCharset;
-var StandardEncoding = coreEncodings.StandardEncoding;
-var ExpertEncoding = coreEncodings.ExpertEncoding;
+import {
+  assert, bytesToString, error, info, isArray, stringToBytes, Util, warn
+} from '../shared/util';
+import {
+  ExpertCharset, ExpertSubsetCharset, ISOAdobeCharset
+} from './charsets';
+import { ExpertEncoding, StandardEncoding } from './encodings';
 
 // Maximum subroutine call depth of type 2 chartrings. Matches OTS.
 var MAX_SUBR_NESTING = 10;
@@ -121,97 +100,97 @@ var CFFStandardStrings = [
 var CFFParser = (function CFFParserClosure() {
   var CharstringValidationData = [
     null,
-    { id: 'hstem', min: 2, stackClearing: true, stem: true },
+    { id: 'hstem', min: 2, stackClearing: true, stem: true, },
     null,
-    { id: 'vstem', min: 2, stackClearing: true, stem: true },
-    { id: 'vmoveto', min: 1, stackClearing: true },
-    { id: 'rlineto', min: 2, resetStack: true },
-    { id: 'hlineto', min: 1, resetStack: true },
-    { id: 'vlineto', min: 1, resetStack: true },
-    { id: 'rrcurveto', min: 6, resetStack: true },
+    { id: 'vstem', min: 2, stackClearing: true, stem: true, },
+    { id: 'vmoveto', min: 1, stackClearing: true, },
+    { id: 'rlineto', min: 2, resetStack: true, },
+    { id: 'hlineto', min: 1, resetStack: true, },
+    { id: 'vlineto', min: 1, resetStack: true, },
+    { id: 'rrcurveto', min: 6, resetStack: true, },
     null,
-    { id: 'callsubr', min: 1, undefStack: true },
-    { id: 'return', min: 0, undefStack: true },
+    { id: 'callsubr', min: 1, undefStack: true, },
+    { id: 'return', min: 0, undefStack: true, },
     null, // 12
     null,
-    { id: 'endchar', min: 0, stackClearing: true },
+    { id: 'endchar', min: 0, stackClearing: true, },
     null,
     null,
     null,
-    { id: 'hstemhm', min: 2, stackClearing: true, stem: true },
-    { id: 'hintmask', min: 0, stackClearing: true },
-    { id: 'cntrmask', min: 0, stackClearing: true },
-    { id: 'rmoveto', min: 2, stackClearing: true },
-    { id: 'hmoveto', min: 1, stackClearing: true },
-    { id: 'vstemhm', min: 2, stackClearing: true, stem: true },
-    { id: 'rcurveline', min: 8, resetStack: true },
-    { id: 'rlinecurve', min: 8, resetStack: true },
-    { id: 'vvcurveto', min: 4, resetStack: true },
-    { id: 'hhcurveto', min: 4, resetStack: true },
+    { id: 'hstemhm', min: 2, stackClearing: true, stem: true, },
+    { id: 'hintmask', min: 0, stackClearing: true, },
+    { id: 'cntrmask', min: 0, stackClearing: true, },
+    { id: 'rmoveto', min: 2, stackClearing: true, },
+    { id: 'hmoveto', min: 1, stackClearing: true, },
+    { id: 'vstemhm', min: 2, stackClearing: true, stem: true, },
+    { id: 'rcurveline', min: 8, resetStack: true, },
+    { id: 'rlinecurve', min: 8, resetStack: true, },
+    { id: 'vvcurveto', min: 4, resetStack: true, },
+    { id: 'hhcurveto', min: 4, resetStack: true, },
     null, // shortint
-    { id: 'callgsubr', min: 1, undefStack: true },
-    { id: 'vhcurveto', min: 4, resetStack: true },
-    { id: 'hvcurveto', min: 4, resetStack: true }
+    { id: 'callgsubr', min: 1, undefStack: true, },
+    { id: 'vhcurveto', min: 4, resetStack: true, },
+    { id: 'hvcurveto', min: 4, resetStack: true, }
   ];
   var CharstringValidationData12 = [
     null,
     null,
     null,
-    { id: 'and', min: 2, stackDelta: -1 },
-    { id: 'or', min: 2, stackDelta: -1 },
-    { id: 'not', min: 1, stackDelta: 0 },
+    { id: 'and', min: 2, stackDelta: -1, },
+    { id: 'or', min: 2, stackDelta: -1, },
+    { id: 'not', min: 1, stackDelta: 0, },
     null,
     null,
     null,
-    { id: 'abs', min: 1, stackDelta: 0 },
+    { id: 'abs', min: 1, stackDelta: 0, },
     { id: 'add', min: 2, stackDelta: -1,
       stackFn: function stack_div(stack, index) {
         stack[index - 2] = stack[index - 2] + stack[index - 1];
-      }
+      },
     },
     { id: 'sub', min: 2, stackDelta: -1,
       stackFn: function stack_div(stack, index) {
         stack[index - 2] = stack[index - 2] - stack[index - 1];
-      }
+      },
     },
     { id: 'div', min: 2, stackDelta: -1,
       stackFn: function stack_div(stack, index) {
         stack[index - 2] = stack[index - 2] / stack[index - 1];
-      }
+      },
     },
     null,
     { id: 'neg', min: 1, stackDelta: 0,
       stackFn: function stack_div(stack, index) {
         stack[index - 1] = -stack[index - 1];
-      }
+      },
     },
-    { id: 'eq', min: 2, stackDelta: -1 },
+    { id: 'eq', min: 2, stackDelta: -1, },
     null,
     null,
-    { id: 'drop', min: 1, stackDelta: -1 },
+    { id: 'drop', min: 1, stackDelta: -1, },
     null,
-    { id: 'put', min: 2, stackDelta: -2 },
-    { id: 'get', min: 1, stackDelta: 0 },
-    { id: 'ifelse', min: 4, stackDelta: -3 },
-    { id: 'random', min: 0, stackDelta: 1 },
+    { id: 'put', min: 2, stackDelta: -2, },
+    { id: 'get', min: 1, stackDelta: 0, },
+    { id: 'ifelse', min: 4, stackDelta: -3, },
+    { id: 'random', min: 0, stackDelta: 1, },
     { id: 'mul', min: 2, stackDelta: -1,
       stackFn: function stack_div(stack, index) {
         stack[index - 2] = stack[index - 2] * stack[index - 1];
-      }
+      },
     },
     null,
-    { id: 'sqrt', min: 1, stackDelta: 0 },
-    { id: 'dup', min: 1, stackDelta: 1 },
-    { id: 'exch', min: 2, stackDelta: 0 },
-    { id: 'index', min: 2, stackDelta: 0 },
-    { id: 'roll', min: 3, stackDelta: -2 },
+    { id: 'sqrt', min: 1, stackDelta: 0, },
+    { id: 'dup', min: 1, stackDelta: 1, },
+    { id: 'exch', min: 2, stackDelta: 0, },
+    { id: 'index', min: 2, stackDelta: 0, },
+    { id: 'roll', min: 3, stackDelta: -2, },
     null,
     null,
     null,
-    { id: 'hflex', min: 7, resetStack: true },
-    { id: 'flex', min: 13, resetStack: true },
-    { id: 'hflex1', min: 9, resetStack: true },
-    { id: 'flex1', min: 11, resetStack: true }
+    { id: 'hflex', min: 7, resetStack: true, },
+    { id: 'flex', min: 13, resetStack: true, },
+    { id: 'hflex1', min: 9, resetStack: true, },
+    { id: 'flex1', min: 11, resetStack: true, }
   ];
 
   function CFFParser(file, properties, seacAnalysisEnabled) {
@@ -257,8 +236,8 @@ var CFFParser = (function CFFParserClosure() {
       var fontBBox = topDict.getByName('FontBBox');
       if (fontBBox) {
         // adjusting ascent/descent
-        properties.ascent = fontBBox[3];
-        properties.descent = fontBBox[1];
+        properties.ascent = Math.max(fontBBox[3], fontBBox[1]);
+        properties.descent = Math.min(fontBBox[1], fontBBox[3]);
         properties.ascentScaled = true;
       }
 
@@ -323,7 +302,7 @@ var CFFParser = (function CFFParserClosure() {
       var hdrSize = bytes[2];
       var offSize = bytes[3];
       var header = new CFFHeader(major, minor, hdrSize, offSize);
-      return { obj: header, endPos: hdrSize };
+      return { obj: header, endPos: hdrSize, };
     },
     parseDict: function CFFParser_parseDict(dict) {
       var pos = 0;
@@ -331,7 +310,7 @@ var CFFParser = (function CFFParserClosure() {
       function parseOperand() {
         var value = dict[pos++];
         if (value === 30) {
-          return parseFloatOperand(pos);
+          return parseFloatOperand();
         } else if (value === 28) {
           value = dict[pos++];
           value = ((value << 24) | (dict[pos++] << 16)) >> 16;
@@ -348,10 +327,9 @@ var CFFParser = (function CFFParserClosure() {
           return ((value - 247) * 256) + dict[pos++] + 108;
         } else if (value >= 251 && value <= 254) {
           return -((value - 251) * 256) - dict[pos++] - 108;
-        } else {
-          error('255 is not a valid DICT command');
         }
-        return -1;
+        warn('CFFParser_parseDict: "' + value + '" is a reserved command.');
+        return NaN;
       }
 
       function parseFloatOperand() {
@@ -426,7 +404,7 @@ var CFFParser = (function CFFParserClosure() {
         var offsetEnd = offsets[i + 1];
         cffIndex.add(bytes.subarray(offsetStart, offsetEnd));
       }
-      return {obj: cffIndex, endPos: end};
+      return { obj: cffIndex, endPos: end, };
     },
     parseNameIndex: function CFFParser_parseNameIndex(index) {
       var names = [];
@@ -476,7 +454,7 @@ var CFFParser = (function CFFParserClosure() {
     parseCharString: function CFFParser_parseCharString(state, data,
                                                         localSubrIndex,
                                                         globalSubrIndex) {
-      if (state.callDepth > MAX_SUBR_NESTING) {
+      if (!data || state.callDepth > MAX_SUBR_NESTING) {
         return false;
       }
       var stackSize = state.stackSize;
@@ -553,7 +531,8 @@ var CFFParser = (function CFFParserClosure() {
             bias = 1131;
           }
           var subrNumber = stack[--stackSize] + bias;
-          if (subrNumber < 0 || subrNumber >= subrsIndex.count) {
+          if (subrNumber < 0 || subrNumber >= subrsIndex.count ||
+              isNaN(subrNumber)) {
             validationCommand = CharstringValidationData[value];
             warn('Out of bounds subrIndex for ' + validationCommand.id);
             return false;
@@ -639,7 +618,7 @@ var CFFParser = (function CFFParserClosure() {
           hints: 0,
           firstStackClearing: true,
           seac: null,
-          width: null
+          width: null,
         };
         var valid = true;
         var localSubrToUse = null;
@@ -674,7 +653,7 @@ var CFFParser = (function CFFParserClosure() {
           charStrings.set(i, new Uint8Array([14]));
         }
       }
-      return { charStrings: charStrings, seacs: seacs, widths: widths };
+      return { charStrings, seacs, widths, };
     },
     emptyPrivateDictionary:
       function CFFParser_emptyPrivateDictionary(parentDict) {
@@ -786,7 +765,6 @@ var CFFParser = (function CFFParserClosure() {
       var encoding = Object.create(null);
       var bytes = this.bytes;
       var predefined = false;
-      var hasSupplement = false;
       var format, i, ii;
       var raw = null;
 
@@ -833,11 +811,11 @@ var CFFParser = (function CFFParserClosure() {
             break;
 
           default:
-            error('Unknow encoding format: ' + format + ' in CFF');
+            error('Unknown encoding format: ' + format + ' in CFF');
             break;
         }
         var dataEnd = pos;
-        if (format & 0x80) {
+        if (format & 0x80) { // hasSupplement
           // The font sanitizer does not support CFF encoding with a
           // supplement, since the encoding is not really used to map
           // between gid to glyph, let's overwrite what is declared in
@@ -845,7 +823,6 @@ var CFFParser = (function CFFParserClosure() {
           // StandardEncoding, that's a lie but that's ok.
           bytes[dataStart] &= 0x7f;
           readSupplement();
-          hasSupplement = true;
         }
         raw = bytes.subarray(dataStart, dataEnd);
       }
@@ -856,8 +833,8 @@ var CFFParser = (function CFFParserClosure() {
       var start = pos;
       var bytes = this.bytes;
       var format = bytes[pos++];
-      var fdSelect = [];
-      var i;
+      var fdSelect = [], rawBytes;
+      var i, invalidFirstGID = false;
 
       switch (format) {
         case 0:
@@ -865,11 +842,18 @@ var CFFParser = (function CFFParserClosure() {
             var id = bytes[pos++];
             fdSelect.push(id);
           }
+          rawBytes = bytes.subarray(start, pos);
           break;
         case 3:
           var rangesCount = (bytes[pos++] << 8) | bytes[pos++];
           for (i = 0; i < rangesCount; ++i) {
             var first = (bytes[pos++] << 8) | bytes[pos++];
+            if (i === 0 && first !== 0) {
+              warn('parseFDSelect: The first range must have a first GID of 0' +
+                   ' -- trying to recover.');
+              invalidFirstGID = true;
+              first = 0;
+            }
             var fdIndex = bytes[pos++];
             var next = (bytes[pos] << 8) | bytes[pos + 1];
             for (var j = first; j < next; ++j) {
@@ -878,14 +862,20 @@ var CFFParser = (function CFFParserClosure() {
           }
           // Advance past the sentinel(next).
           pos += 2;
+          rawBytes = bytes.subarray(start, pos);
+
+          if (invalidFirstGID) {
+            rawBytes[3] = rawBytes[4] = 0; // Adjust the first range, first GID.
+          }
           break;
         default:
-          error('Unknown fdselect format ' + format);
+          error('parseFDSelect: Unknown format "' + format + '".');
           break;
       }
-      var end = pos;
-      return new CFFFDSelect(fdSelect, bytes.subarray(start, end));
-    }
+      assert(fdSelect.length === length, 'parseFDSelect: Invalid font data.');
+
+      return new CFFFDSelect(fdSelect, rawBytes);
+    },
   };
   return CFFParser;
 })();
@@ -941,7 +931,7 @@ var CFFStrings = (function CFFStringsClosure() {
     },
     get count() {
       return this.strings.length;
-    }
+    },
   };
   return CFFStrings;
 })();
@@ -965,7 +955,7 @@ var CFFIndex = (function CFFIndexClosure() {
     },
     get count() {
       return this.objects.length;
-    }
+    },
   };
   return CFFIndex;
 })();
@@ -987,9 +977,17 @@ var CFFDict = (function CFFDictClosure() {
       if (!(key in this.keyToNameMap)) {
         return false;
       }
+      var valueLength = value.length;
       // ignore empty values
-      if (value.length === 0) {
+      if (valueLength === 0) {
         return true;
+      }
+      // Ignore invalid values (fixes bug1068432.pdf and bug1308536.pdf).
+      for (var i = 0; i < valueLength; i++) {
+        if (isNaN(value[i])) {
+          warn('Invalid CFFDict value: "' + value + '" for key "' + key + '".');
+          return true;
+        }
       }
       var type = this.types[key];
       // remove the array wrapping these types of values
@@ -1020,7 +1018,7 @@ var CFFDict = (function CFFDictClosure() {
     },
     removeByName: function CFFDict_removeByName(name) {
       delete this.values[this.nameToKeyMap[name]];
-    }
+    },
   };
   CFFDict.createTables = function CFFDict_createTables(layout) {
     var tables = {
@@ -1029,7 +1027,7 @@ var CFFDict = (function CFFDictClosure() {
       defaults: {},
       types: {},
       opcodes: {},
-      order: []
+      order: [],
     };
     for (var i = 0, ii = layout.length; i < ii; ++i) {
       var entry = layout[i];
@@ -1134,7 +1132,7 @@ var CFFPrivateDict = (function CFFPrivateDictClosure() {
 var CFFCharsetPredefinedTypes = {
   ISO_ADOBE: 0,
   EXPERT: 1,
-  EXPERT_SUBSET: 2
+  EXPERT_SUBSET: 2,
 };
 var CFFCharset = (function CFFCharsetClosure() {
   function CFFCharset(predefined, format, charset, raw) {
@@ -1167,7 +1165,7 @@ var CFFFDSelect = (function CFFFDSelectClosure() {
         return -1;
       }
       return this.fdSelect[glyphIndex];
-    }
+    },
   };
   return CFFFDSelect;
 })();
@@ -1220,7 +1218,7 @@ var CFFOffsetTracker = (function CFFOffsetTrackerClosure() {
         data[offset3] = (value >> 8) & 0xFF;
         data[offset4] = value & 0xFF;
       }
-    }
+    },
   };
   return CFFOffsetTracker;
 })();
@@ -1239,7 +1237,7 @@ var CFFCompiler = (function CFFCompilerClosure() {
         add: function CFFCompiler_add(data) {
           this.data = this.data.concat(data);
           this.length = this.data.length;
-        }
+        },
       };
 
       // Compile the five entries that must be in order.
@@ -1288,7 +1286,7 @@ var CFFCompiler = (function CFFCompilerClosure() {
       var globalSubrIndex = this.compileIndex(cff.globalSubrIndex);
       output.add(globalSubrIndex);
 
-      // Now start on the other entries that have no specfic order.
+      // Now start on the other entries that have no specific order.
       if (cff.encoding && cff.topDict.hasName('Encoding')) {
         if (cff.encoding.predefined) {
           topDictTracker.setEntryLocation('Encoding', [cff.encoding.format],
@@ -1342,9 +1340,8 @@ var CFFCompiler = (function CFFCompilerClosure() {
     encodeNumber: function CFFCompiler_encodeNumber(value) {
       if (parseFloat(value) === parseInt(value, 10) && !isNaN(value)) { // isInt
         return this.encodeInteger(value);
-      } else {
-        return this.encodeFloat(value);
       }
+      return this.encodeFloat(value);
     },
     encodeFloat: function CFFCompiler_encodeFloat(num) {
       var value = num.toString();
@@ -1382,7 +1379,7 @@ var CFFCompiler = (function CFFCompilerClosure() {
       if (value >= -107 && value <= 107) {
         code = [value + 139];
       } else if (value >= 108 && value <= 1131) {
-        value = [value - 108];
+        value = value - 108;
         code = [(value >> 8) + 247, value & 0xFF];
       } else if (value >= -1131 && value <= -108) {
         value = -value - 108;
@@ -1436,7 +1433,7 @@ var CFFCompiler = (function CFFCompilerClosure() {
       fdArrayIndex = this.compileIndex(fdArrayIndex, fontDictTrackers);
       return {
         trackers: fontDictTrackers,
-        output: fdArrayIndex
+        output: fdArrayIndex,
       };
     },
     compilePrivateDicts: function CFFCompiler_compilePrivateDicts(dicts,
@@ -1628,19 +1625,20 @@ var CFFCompiler = (function CFFCompilerClosure() {
         }
       }
       return data;
-    }
+    },
   };
   return CFFCompiler;
 })();
 
-exports.CFFStandardStrings = CFFStandardStrings;
-exports.CFFParser = CFFParser;
-exports.CFF = CFF;
-exports.CFFHeader = CFFHeader;
-exports.CFFStrings = CFFStrings;
-exports.CFFIndex = CFFIndex;
-exports.CFFCharset = CFFCharset;
-exports.CFFTopDict = CFFTopDict;
-exports.CFFPrivateDict = CFFPrivateDict;
-exports.CFFCompiler = CFFCompiler;
-}));
+export {
+  CFFStandardStrings,
+  CFFParser,
+  CFF,
+  CFFHeader,
+  CFFStrings,
+  CFFIndex,
+  CFFCharset,
+  CFFTopDict,
+  CFFPrivateDict,
+  CFFCompiler,
+};

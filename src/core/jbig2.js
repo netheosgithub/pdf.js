@@ -13,40 +13,22 @@
  * limitations under the License.
  */
 
-'use strict';
-
-(function (root, factory) {
-  if (typeof define === 'function' && define.amd) {
-    define('pdfjs/core/jbig2', ['exports', 'pdfjs/shared/util',
-      'pdfjs/core/arithmetic_decoder'], factory);
-  } else if (typeof exports !== 'undefined') {
-    factory(exports, require('../shared/util.js'),
-      require('./arithmetic_decoder.js'));
-  } else {
-    factory((root.pdfjsCoreJbig2 = {}), root.pdfjsSharedUtil,
-      root.pdfjsCoreArithmeticDecoder);
-  }
-}(this, function (exports, sharedUtil, coreArithmeticDecoder) {
-
-var error = sharedUtil.error;
-var log2 = sharedUtil.log2;
-var readInt8 = sharedUtil.readInt8;
-var readUint16 = sharedUtil.readUint16;
-var readUint32 = sharedUtil.readUint32;
-var shadow = sharedUtil.shadow;
-var ArithmeticDecoder = coreArithmeticDecoder.ArithmeticDecoder;
+import {
+  error, log2, readInt8, readUint16, readUint32, shadow
+} from '../shared/util';
+import { ArithmeticDecoder } from './arithmetic_decoder';
 
 var Jbig2Image = (function Jbig2ImageClosure() {
   // Utility data structures
   function ContextCache() {}
 
   ContextCache.prototype = {
-    getContexts: function(id) {
+    getContexts(id) {
       if (id in this) {
         return this[id];
       }
       return (this[id] = new Int8Array(1 << 16));
-    }
+    },
   };
 
   function DecodingContext(data, start, end) {
@@ -63,7 +45,7 @@ var Jbig2Image = (function Jbig2ImageClosure() {
     get contextCache() {
       var cache = new ContextCache();
       return shadow(this, 'contextCache', cache);
-    }
+    },
   };
 
   // Annex A. Arithmetic Integer Decoding Procedure
@@ -131,29 +113,32 @@ var Jbig2Image = (function Jbig2ImageClosure() {
   ];
 
   var CodingTemplates = [
-    [{x: -1, y: -2}, {x: 0, y: -2}, {x: 1, y: -2}, {x: -2, y: -1},
-     {x: -1, y: -1}, {x: 0, y: -1}, {x: 1, y: -1}, {x: 2, y: -1},
-     {x: -4, y: 0}, {x: -3, y: 0}, {x: -2, y: 0}, {x: -1, y: 0}],
-    [{x: -1, y: -2}, {x: 0, y: -2}, {x: 1, y: -2}, {x: 2, y: -2},
-     {x: -2, y: -1}, {x: -1, y: -1}, {x: 0, y: -1}, {x: 1, y: -1},
-     {x: 2, y: -1}, {x: -3, y: 0}, {x: -2, y: 0}, {x: -1, y: 0}],
-    [{x: -1, y: -2}, {x: 0, y: -2}, {x: 1, y: -2}, {x: -2, y: -1},
-     {x: -1, y: -1}, {x: 0, y: -1}, {x: 1, y: -1}, {x: -2, y: 0},
-     {x: -1, y: 0}],
-    [{x: -3, y: -1}, {x: -2, y: -1}, {x: -1, y: -1}, {x: 0, y: -1},
-     {x: 1, y: -1}, {x: -4, y: 0}, {x: -3, y: 0}, {x: -2, y: 0}, {x: -1, y: 0}]
+    [{ x: -1, y: -2, }, { x: 0, y: -2, }, { x: 1, y: -2, }, { x: -2, y: -1, },
+     { x: -1, y: -1, }, { x: 0, y: -1, }, { x: 1, y: -1, }, { x: 2, y: -1, },
+     { x: -4, y: 0, }, { x: -3, y: 0, }, { x: -2, y: 0, }, { x: -1, y: 0, }],
+    [{ x: -1, y: -2, }, { x: 0, y: -2, }, { x: 1, y: -2, }, { x: 2, y: -2, },
+     { x: -2, y: -1, }, { x: -1, y: -1, }, { x: 0, y: -1, }, { x: 1, y: -1, },
+     { x: 2, y: -1, }, { x: -3, y: 0, }, { x: -2, y: 0, }, { x: -1, y: 0, }],
+    [{ x: -1, y: -2, }, { x: 0, y: -2, }, { x: 1, y: -2, }, { x: -2, y: -1, },
+     { x: -1, y: -1, }, { x: 0, y: -1, }, { x: 1, y: -1, }, { x: -2, y: 0, },
+     { x: -1, y: 0, }],
+    [{ x: -3, y: -1, }, { x: -2, y: -1, }, { x: -1, y: -1, }, { x: 0, y: -1, },
+     { x: 1, y: -1, }, { x: -4, y: 0, }, { x: -3, y: 0, }, { x: -2, y: 0, },
+     { x: -1, y: 0, }]
   ];
 
   var RefinementTemplates = [
     {
-      coding: [{x: 0, y: -1}, {x: 1, y: -1}, {x: -1, y: 0}],
-      reference: [{x: 0, y: -1}, {x: 1, y: -1}, {x: -1, y: 0}, {x: 0, y: 0},
-                  {x: 1, y: 0}, {x: -1, y: 1}, {x: 0, y: 1}, {x: 1, y: 1}]
+      coding: [{ x: 0, y: -1, }, { x: 1, y: -1, }, { x: -1, y: 0, }],
+      reference: [{ x: 0, y: -1, }, { x: 1, y: -1, }, { x: -1, y: 0, },
+                  { x: 0, y: 0, }, { x: 1, y: 0, }, { x: -1, y: 1, },
+                  { x: 0, y: 1, }, { x: 1, y: 1, }],
     },
     {
-      coding: [{x: -1, y: -1}, {x: 0, y: -1}, {x: 1, y: -1}, {x: -1, y: 0}],
-      reference: [{x: 0, y: -1}, {x: -1, y: 0}, {x: 0, y: 0}, {x: 1, y: 0},
-                  {x: 0, y: 1}, {x: 1, y: 1}]
+      coding: [{ x: -1, y: -1, }, { x: 0, y: -1, }, { x: 1, y: -1, },
+               { x: -1, y: 0, }],
+      reference: [{ x: 0, y: -1, }, { x: -1, y: 0, }, { x: 0, y: 0, },
+                  { x: 1, y: 0, }, { x: 0, y: 1, }, { x: 1, y: 1, }],
     }
   ];
 
@@ -394,8 +379,8 @@ var Jbig2Image = (function Jbig2ImageClosure() {
           }
         }
         for (k = 0; k < referenceTemplateLength; k++) {
-          i0 = i + referenceTemplateY[k] + offsetY;
-          j0 = j + referenceTemplateX[k] + offsetX;
+          i0 = i + referenceTemplateY[k] - offsetY;
+          j0 = j + referenceTemplateX[k] - offsetX;
           if (i0 < 0 || i0 >= referenceHeight || j0 < 0 ||
               j0 >= referenceWidth) {
             contextLabel <<= 1; // out of bound pixel
@@ -432,14 +417,12 @@ var Jbig2Image = (function Jbig2ImageClosure() {
       var deltaHeight = decodeInteger(contextCache, 'IADH', decoder); // 6.5.6
       currentHeight += deltaHeight;
       var currentWidth = 0;
-      var totalWidth = 0;
       while (true) {
         var deltaWidth = decodeInteger(contextCache, 'IADW', decoder); // 6.5.7
         if (deltaWidth === null) {
           break; // OOB
         }
         currentWidth += deltaWidth;
-        totalWidth += currentWidth;
         var bitmap;
         if (refinement) {
           // 6.5.8.2 Refinement/aggregate-coded symbol bitmap
@@ -447,13 +430,13 @@ var Jbig2Image = (function Jbig2ImageClosure() {
           if (numberOfInstances > 1) {
             bitmap = decodeTextRegion(huffman, refinement,
                                       currentWidth, currentHeight, 0,
-                                      numberOfInstances, 1, //strip size
+                                      numberOfInstances, 1, // strip size
                                       symbols.concat(newSymbols),
                                       symbolCodeLength,
-                                      0, //transposed
-                                      0, //ds offset
-                                      1, //top left 7.4.3.1.1
-                                      0, //OR operator
+                                      0, // transposed
+                                      0, // ds offset
+                                      1, // top left 7.4.3.1.1
+                                      0, // OR operator
                                       huffmanTables,
                                       refinementTemplateIndex, refinementAt,
                                       decodingContext);
@@ -722,7 +705,7 @@ var Jbig2Image = (function Jbig2ImageClosure() {
       position = segmentHeader.headerEnd;
       var segment = {
         header: segmentHeader,
-        data: data
+        data,
       };
       if (!header.randomAccess) {
         segment.start = position;
@@ -751,7 +734,7 @@ var Jbig2Image = (function Jbig2ImageClosure() {
       height: readUint32(data, start + 4),
       x: readUint32(data, start + 8),
       y: readUint32(data, start + 12),
-      combinationOperator: data[start + 16] & 7
+      combinationOperator: data[start + 16] & 7,
     };
   }
   var RegionSegmentInformationFieldLength = 17;
@@ -783,7 +766,7 @@ var Jbig2Image = (function Jbig2ImageClosure() {
           for (i = 0; i < atLength; i++) {
             at.push({
               x: readInt8(data, position),
-              y: readInt8(data, position + 1)
+              y: readInt8(data, position + 1),
             });
             position += 2;
           }
@@ -794,7 +777,7 @@ var Jbig2Image = (function Jbig2ImageClosure() {
           for (i = 0; i < 2; i++) {
             at.push({
               x: readInt8(data, position),
-              y: readInt8(data, position + 1)
+              y: readInt8(data, position + 1),
             });
             position += 2;
           }
@@ -841,7 +824,7 @@ var Jbig2Image = (function Jbig2ImageClosure() {
           for (i = 0; i < 2; i++) {
             at.push({
               x: readInt8(data, position),
-              y: readInt8(data, position + 1)
+              y: readInt8(data, position + 1),
             });
             position += 2;
           }
@@ -870,7 +853,7 @@ var Jbig2Image = (function Jbig2ImageClosure() {
           for (i = 0; i < atLength; i++) {
             at.push({
               x: readInt8(data, position),
-              y: readInt8(data, position + 1)
+              y: readInt8(data, position + 1),
             });
             position += 2;
           }
@@ -883,13 +866,13 @@ var Jbig2Image = (function Jbig2ImageClosure() {
           width: readUint32(data, position),
           height: readUint32(data, position + 4),
           resolutionX: readUint32(data, position + 8),
-          resolutionY: readUint32(data, position + 12)
+          resolutionY: readUint32(data, position + 12),
         };
         if (pageInfo.height === 0xFFFFFFFF) {
           delete pageInfo.height;
         }
         var pageSegmentFlags = data[position + 16];
-        var pageStripingInformation = readUint16(data, position + 17);
+        readUint16(data, position + 17); // pageStripingInformation
         pageInfo.lossless = !!(pageSegmentFlags & 1);
         pageInfo.refinement = !!(pageSegmentFlags & 2);
         pageInfo.defaultPixelValue = (pageSegmentFlags >> 2) & 1;
@@ -923,7 +906,7 @@ var Jbig2Image = (function Jbig2ImageClosure() {
     }
   }
 
-  function parseJbig2(data, start, end) {
+  function parseJbig2(data, start, end) { // eslint-disable-line no-unused-vars
     var position = start;
     if (data[position] !== 0x97 || data[position + 1] !== 0x4A ||
         data[position + 2] !== 0x42 || data[position + 3] !== 0x32 ||
@@ -939,7 +922,7 @@ var Jbig2Image = (function Jbig2ImageClosure() {
       header.numberOfPages = readUint32(data, position);
       position += 4;
     }
-    var segments = readSegments(header, data, position, end);
+    readSegments(header, data, position, end); // segments
     error('Not implemented');
     // processSegments(segments, new SimpleSegmentVisitor());
   }
@@ -977,7 +960,7 @@ var Jbig2Image = (function Jbig2ImageClosure() {
       var combinationOperator = pageInfo.combinationOperatorOverride ?
         regionInfo.combinationOperator : pageInfo.combinationOperator;
       var buffer = this.buffer;
-      var mask0 =  128 >> (regionInfo.x & 7);
+      var mask0 = 128 >> (regionInfo.x & 7);
       var offset0 = regionInfo.y * rowSize + (regionInfo.x >> 3);
       var i, j, mask, offset;
       switch (combinationOperator) {
@@ -1090,7 +1073,7 @@ var Jbig2Image = (function Jbig2ImageClosure() {
     onImmediateLosslessTextRegion:
       function SimpleSegmentVisitor_onImmediateLosslessTextRegion() {
       this.onImmediateTextRegion.apply(this, arguments);
-    }
+    },
   };
 
   function Jbig2Image() {}
@@ -1098,11 +1081,12 @@ var Jbig2Image = (function Jbig2ImageClosure() {
   Jbig2Image.prototype = {
     parseChunks: function Jbig2Image_parseChunks(chunks) {
       return parseJbig2Chunks(chunks);
-    }
+    },
   };
 
   return Jbig2Image;
 })();
 
-exports.Jbig2Image = Jbig2Image;
-}));
+export {
+  Jbig2Image,
+};

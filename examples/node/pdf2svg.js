@@ -10,15 +10,15 @@ var fs = require('fs');
 // HACK few hacks to let PDF.js be loaded not as a module in global space.
 require('./domstubs.js');
 
-// Run `gulp dist` to generate 'pdfjs-dist' npm package files.
-var pdfjsLib = require('../../build/dist');
+// Run `gulp dist-install` to generate 'pdfjs-dist' npm package files.
+var pdfjsLib = require('pdfjs-dist');
 
 // Loading file from file system into typed array
 var pdfPath = process.argv[2] || '../../web/compressed.tracemonkey-pldi-09.pdf';
 var data = new Uint8Array(fs.readFileSync(pdfPath));
 
 // Dumps svg outputs to a folder called svgdump
-function writeToFile(svgdump, pageNum) {
+function writeToFile(svgdump, pageNum, callback) {
   var name = getFileNameFromPath(pdfPath);
   fs.mkdir('./svgdump/', function(err) {
     if (!err || err.code === 'EEXIST') {
@@ -29,7 +29,10 @@ function writeToFile(svgdump, pageNum) {
           } else {
             console.log('Page: ' + pageNum);
           }
+          callback();
         });
+    } else {
+      callback();
     }
   });
 }
@@ -39,12 +42,16 @@ function writeToFile(svgdump, pageNum) {
 function getFileNameFromPath(path) {
   var index = path.lastIndexOf('/');
   var extIndex = path.lastIndexOf('.');
-  return path.substring(index , extIndex);
+  return path.substring(index, extIndex);
 }
 
 // Will be using promises to load document, pages and misc data instead of
 // callback.
-pdfjsLib.getDocument(data).then(function (doc) {
+pdfjsLib.getDocument({
+  data: data,
+  // Try to export JPEG images directly if they don't need any further processing.
+  nativeImageDecoderSupport: pdfjsLib.NativeImageDecoding.DISPLAY
+}).then(function (doc) {
   var numPages = doc.numPages;
   console.log('# Document Loaded');
   console.log('Number of Pages: ' + numPages);
@@ -63,7 +70,9 @@ pdfjsLib.getDocument(data).then(function (doc) {
         svgGfx.embedFonts = true;
         return svgGfx.getSVG(opList, viewport).then(function (svg) {
           var svgDump = svg.toString();
-          writeToFile(svgDump, pageNum);
+          return new Promise(function(resolve) {
+            writeToFile(svgDump, pageNum, resolve);
+          });
         });
       });
     })

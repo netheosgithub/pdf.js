@@ -1,30 +1,46 @@
-/* globals expect, it, describe, PartialEvaluator, StringStream, OPS,
-           OperatorList, Dict, Name, Stream, WorkerTask */
+/* Copyright 2017 Mozilla Foundation
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
-'use strict';
+import { Dict, Name } from '../../src/core/primitives';
+import { OperatorList, PartialEvaluator } from '../../src/core/evaluator';
+import { Stream, StringStream } from '../../src/core/stream';
+import { OPS } from '../../src/shared/util';
+import { WorkerTask } from '../../src/core/worker';
 
 describe('evaluator', function() {
   function XrefMock(queue) {
     this.queue = queue || [];
   }
   XrefMock.prototype = {
-    fetchIfRef: function() {
+    fetchIfRef() {
       return this.queue.shift();
-    }
+    },
   };
   function HandlerMock() {
     this.inputs = [];
   }
   HandlerMock.prototype = {
-    send: function(name, data) {
-      this.inputs.push({name: name, data: data});
-    }
+    send(name, data) {
+      this.inputs.push({ name, data, });
+    },
   };
   function ResourcesMock() { }
   ResourcesMock.prototype = {
-    get: function(name) {
+    get(name) {
       return this[name];
-    }
+    },
   };
 
   function PdfManagerMock() { }
@@ -32,20 +48,36 @@ describe('evaluator', function() {
   function runOperatorListCheck(evaluator, stream, resources, callback) {
     var result = new OperatorList();
     var task = new WorkerTask('OperatorListCheck');
-    evaluator.getOperatorList(stream, task, resources, result).then(
-        function () {
+    evaluator.getOperatorList({
+      stream,
+      task,
+      resources,
+      operatorList: result,
+    }).then(function() {
       callback(result);
     });
   }
 
+  var partialEvaluator;
+
+  beforeAll(function(done) {
+    partialEvaluator = new PartialEvaluator({
+      pdfManager: new PdfManagerMock(),
+      xref: new XrefMock(),
+      handler: new HandlerMock(),
+      pageIndex: 0,
+    });
+    done();
+  });
+
+  afterAll(function() {
+    partialEvaluator = null;
+  });
+
   describe('splitCombinedOperations', function() {
     it('should reject unknown operations', function(done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var stream = new StringStream('fTT');
-
-      runOperatorListCheck(evaluator, stream, new ResourcesMock(),
+      runOperatorListCheck(partialEvaluator, stream, new ResourcesMock(),
           function(result) {
         expect(!!result.fnArray && !!result.argsArray).toEqual(true);
         expect(result.fnArray.length).toEqual(1);
@@ -56,11 +88,8 @@ describe('evaluator', function() {
     });
 
     it('should handle one operations', function(done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var stream = new StringStream('Q');
-      runOperatorListCheck(evaluator, stream, new ResourcesMock(),
+      runOperatorListCheck(partialEvaluator, stream, new ResourcesMock(),
           function(result) {
         expect(!!result.fnArray && !!result.argsArray).toEqual(true);
         expect(result.fnArray.length).toEqual(1);
@@ -70,13 +99,11 @@ describe('evaluator', function() {
     });
 
     it('should handle two glued operations', function(done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var resources = new ResourcesMock();
       resources.Res1 = {};
       var stream = new StringStream('/Res1 DoQ');
-      runOperatorListCheck(evaluator, stream, resources, function (result) {
+      runOperatorListCheck(partialEvaluator, stream, resources,
+          function(result) {
         expect(!!result.fnArray && !!result.argsArray).toEqual(true);
         expect(result.fnArray.length).toEqual(2);
         expect(result.fnArray[0]).toEqual(OPS.paintXObject);
@@ -86,11 +113,8 @@ describe('evaluator', function() {
     });
 
     it('should handle tree glued operations', function(done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var stream = new StringStream('fff');
-      runOperatorListCheck(evaluator, stream, new ResourcesMock(),
+      runOperatorListCheck(partialEvaluator, stream, new ResourcesMock(),
           function (result) {
         expect(!!result.fnArray && !!result.argsArray).toEqual(true);
         expect(result.fnArray.length).toEqual(3);
@@ -102,13 +126,11 @@ describe('evaluator', function() {
     });
 
     it('should handle three glued operations #2', function(done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var resources = new ResourcesMock();
       resources.Res1 = {};
       var stream = new StringStream('B*Bf*');
-      runOperatorListCheck(evaluator, stream, resources, function (result) {
+      runOperatorListCheck(partialEvaluator, stream, resources,
+          function(result) {
         expect(!!result.fnArray && !!result.argsArray).toEqual(true);
         expect(result.fnArray.length).toEqual(3);
         expect(result.fnArray[0]).toEqual(OPS.eoFillStroke);
@@ -119,11 +141,8 @@ describe('evaluator', function() {
     });
 
     it('should handle glued operations and operands', function(done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var stream = new StringStream('f5 Ts');
-      runOperatorListCheck(evaluator, stream, new ResourcesMock(),
+      runOperatorListCheck(partialEvaluator, stream, new ResourcesMock(),
           function (result) {
         expect(!!result.fnArray && !!result.argsArray).toEqual(true);
         expect(result.fnArray.length).toEqual(2);
@@ -137,11 +156,8 @@ describe('evaluator', function() {
     });
 
     it('should handle glued operations and literals', function(done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var stream = new StringStream('trueifalserinulln');
-      runOperatorListCheck(evaluator, stream, new ResourcesMock(),
+      runOperatorListCheck(partialEvaluator, stream, new ResourcesMock(),
           function (result) {
         expect(!!result.fnArray && !!result.argsArray).toEqual(true);
         expect(result.fnArray.length).toEqual(3);
@@ -161,11 +177,8 @@ describe('evaluator', function() {
 
   describe('validateNumberOfArgs', function() {
     it('should execute if correct number of arguments', function(done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var stream = new StringStream('5 1 d0');
-      runOperatorListCheck(evaluator, stream, new ResourcesMock(),
+      runOperatorListCheck(partialEvaluator, stream, new ResourcesMock(),
           function (result) {
         expect(result.argsArray[0][0]).toEqual(5);
         expect(result.argsArray[0][1]).toEqual(1);
@@ -174,11 +187,8 @@ describe('evaluator', function() {
       });
     });
     it('should execute if too many arguments', function(done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var stream = new StringStream('5 1 4 d0');
-      runOperatorListCheck(evaluator, stream, new ResourcesMock(),
+      runOperatorListCheck(partialEvaluator, stream, new ResourcesMock(),
           function (result) {
         expect(result.argsArray[0][0]).toEqual(1);
         expect(result.argsArray[0][1]).toEqual(4);
@@ -187,11 +197,8 @@ describe('evaluator', function() {
       });
     });
     it('should execute if nested commands', function(done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var stream = new StringStream('/F2 /GS2 gs 5.711 Tf');
-      runOperatorListCheck(evaluator, stream, new ResourcesMock(),
+      runOperatorListCheck(partialEvaluator, stream, new ResourcesMock(),
           function (result) {
         expect(result.fnArray.length).toEqual(3);
         expect(result.fnArray[0]).toEqual(OPS.setGState);
@@ -205,11 +212,8 @@ describe('evaluator', function() {
       });
     });
     it('should skip if too few arguments', function(done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var stream = new StringStream('5 d0');
-      runOperatorListCheck(evaluator, stream, new ResourcesMock(),
+      runOperatorListCheck(partialEvaluator, stream, new ResourcesMock(),
           function (result) {
         expect(result.argsArray).toEqual([]);
         expect(result.fnArray).toEqual([]);
@@ -217,11 +221,8 @@ describe('evaluator', function() {
       });
     });
     it('should close opened saves', function(done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-        new XrefMock(), new HandlerMock(),
-        'prefix');
       var stream = new StringStream('qq');
-      runOperatorListCheck(evaluator, stream, new ResourcesMock(),
+      runOperatorListCheck(partialEvaluator, stream, new ResourcesMock(),
           function (result) {
         expect(!!result.fnArray && !!result.argsArray).toEqual(true);
         expect(result.fnArray.length).toEqual(4);
@@ -233,11 +234,8 @@ describe('evaluator', function() {
       });
     });
     it('should skip paintXObject if name is missing', function(done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var stream = new StringStream('/ Do');
-      runOperatorListCheck(evaluator, stream, new ResourcesMock(),
+      runOperatorListCheck(partialEvaluator, stream, new ResourcesMock(),
           function (result) {
         expect(result.argsArray).toEqual([]);
         expect(result.fnArray).toEqual([]);
@@ -245,9 +243,6 @@ describe('evaluator', function() {
       });
     });
     it('should skip paintXObject if subtype is PS', function(done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var xobjStreamDict = new Dict();
       xobjStreamDict.set('Subtype', Name.get('PS'));
       var xobjStream = new Stream([], 0, 0, xobjStreamDict);
@@ -259,7 +254,8 @@ describe('evaluator', function() {
       resources.set('XObject', xobjs);
 
       var stream = new StringStream('/Res1 Do');
-      runOperatorListCheck(evaluator, stream, resources, function (result) {
+      runOperatorListCheck(partialEvaluator, stream, resources,
+          function(result) {
         expect(result.argsArray).toEqual([]);
         expect(result.fnArray).toEqual([]);
         done();
@@ -269,41 +265,42 @@ describe('evaluator', function() {
 
   describe('thread control', function() {
     it('should abort operator list parsing', function (done) {
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var stream = new StringStream('qqQQ');
       var resources = new ResourcesMock();
       var result = new OperatorList();
       var task = new WorkerTask('OperatorListAbort');
       task.terminate();
-      evaluator.getOperatorList(stream, task, resources, result).catch(
-        function () {
-          expect(!!result.fnArray && !!result.argsArray).toEqual(true);
-          expect(result.fnArray.length).toEqual(0);
-          done();
-        });
+      partialEvaluator.getOperatorList({
+        stream,
+        task,
+        resources,
+        operatorList: result,
+      }).catch(function() {
+        expect(!!result.fnArray && !!result.argsArray).toEqual(true);
+        expect(result.fnArray.length).toEqual(0);
+        done();
+      });
     });
     it('should abort text parsing parsing', function (done) {
       var resources = new ResourcesMock();
-      var evaluator = new PartialEvaluator(new PdfManagerMock(),
-                                           new XrefMock(), new HandlerMock(),
-                                           'prefix');
       var stream = new StringStream('qqQQ');
       var task = new WorkerTask('TextContentAbort');
       task.terminate();
-      evaluator.getTextContent(stream, task, resources).catch(
-        function () {
-          expect(true).toEqual(true);
-          done();
-        });
+      partialEvaluator.getTextContent({
+        stream,
+        task,
+        resources,
+      }).catch(function() {
+        expect(true).toEqual(true);
+        done();
+      });
     });
   });
 
   describe('operator list', function () {
     function MessageHandlerMock() { }
     MessageHandlerMock.prototype = {
-      send: function () { },
+      send() { },
     };
 
     it('should get correct total length after flushing', function () {

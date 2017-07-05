@@ -1,6 +1,19 @@
-/* globals expect, it, describe, PDFNetworkStream */
+/* Copyright 2017 Mozilla Foundation
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
-'use strict';
+import { PDFNetworkStream } from '../../src/core/network';
 
 describe('network', function() {
   var pdf1 = new URL('../pdfs/tracemonkey.pdf', window.location).href;
@@ -15,7 +28,7 @@ describe('network', function() {
         rangeChunkSize: 65536,
         disableStream: true,
       },
-      disableRange: true
+      disableRange: true,
     });
 
     var fullReader = stream.getFullReader();
@@ -38,7 +51,7 @@ describe('network', function() {
       });
     };
 
-    var readPromise = read();
+    var readPromise = Promise.all([read(), promise]);
 
     readPromise.then(function (page) {
       expect(len).toEqual(pdf1Length);
@@ -69,7 +82,7 @@ describe('network', function() {
         rangeChunkSize: 65536,
         disableStream: false,
       },
-      disableRange: false
+      disableRange: false,
     });
 
     var fullReader = stream.getFullReader();
@@ -92,12 +105,13 @@ describe('network', function() {
       });
     };
 
-    var readPromise = read();
+    var readPromise = Promise.all([read(), promise]);
 
     readPromise.then(function () {
       expect(len).toEqual(pdf2Length);
       expect(count).toBeGreaterThan(1);
       expect(isStreamingSupported).toEqual(true);
+      expect(isRangeSupported).toEqual(true);
       done();
     }).catch(function (reason) {
       done.fail(reason);
@@ -115,7 +129,7 @@ describe('network', function() {
         rangeChunkSize: rangeSize,
         disableStream: true,
       },
-      disableRange: false
+      disableRange: false,
     });
 
     var fullReader = stream.getFullReader();
@@ -136,7 +150,7 @@ describe('network', function() {
                                              pdf1Length - tailSize);
     var range2Reader = stream.getRangeReader(pdf1Length - tailSize, pdf1Length);
 
-    var result1 = {value: 0}, result2 = {value: 0};
+    var result1 = { value: 0, }, result2 = { value: 0, };
     var read = function (reader, lenResult) {
       return reader.read().then(function (result) {
         if (result.done) {
@@ -154,6 +168,7 @@ describe('network', function() {
     readPromises.then(function () {
       expect(result1.value).toEqual(rangeSize);
       expect(result2.value).toEqual(tailSize);
+      expect(isStreamingSupported).toEqual(false);
       expect(isRangeSupported).toEqual(true);
       expect(fullReaderCancelled).toEqual(true);
       done();

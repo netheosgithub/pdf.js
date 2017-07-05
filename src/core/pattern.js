@@ -12,35 +12,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/* eslint-disable no-multi-spaces */
 
-'use strict';
-
-(function (root, factory) {
-  if (typeof define === 'function' && define.amd) {
-    define('pdfjs/core/pattern', ['exports', 'pdfjs/shared/util',
-      'pdfjs/core/primitives', 'pdfjs/core/function',
-      'pdfjs/core/colorspace'], factory);
-  } else if (typeof exports !== 'undefined') {
-    factory(exports, require('../shared/util.js'), require('./primitives.js'),
-      require('./function.js'), require('./colorspace.js'));
-  } else {
-    factory((root.pdfjsCorePattern = {}), root.pdfjsSharedUtil,
-      root.pdfjsCorePrimitives, root.pdfjsCoreFunction,
-      root.pdfjsCoreColorSpace);
-  }
-}(this, function (exports, sharedUtil, corePrimitives, coreFunction,
-                  coreColorSpace) {
-
-var UNSUPPORTED_FEATURES = sharedUtil.UNSUPPORTED_FEATURES;
-var MissingDataException = sharedUtil.MissingDataException;
-var Util = sharedUtil.Util;
-var assert = sharedUtil.assert;
-var error = sharedUtil.error;
-var info = sharedUtil.info;
-var warn = sharedUtil.warn;
-var isStream = corePrimitives.isStream;
-var PDFFunction = coreFunction.PDFFunction;
-var ColorSpace = coreColorSpace.ColorSpace;
+import {
+  assert, error, info, MissingDataException, UNSUPPORTED_FEATURES, Util, warn
+} from '../shared/util';
+import { ColorSpace } from './colorspace';
+import { isStream } from './primitives';
+import { PDFFunction } from './function';
 
 var ShadingType = {
   FUNCTION_BASED: 1,
@@ -49,7 +28,7 @@ var ShadingType = {
   FREE_FORM_MESH: 4,
   LATTICE_FORM_MESH: 5,
   COONS_PATCH_MESH: 6,
-  TENSOR_PATCH_MESH: 7
+  TENSOR_PATCH_MESH: 7,
 };
 
 var Pattern = (function PatternClosure() {
@@ -63,7 +42,7 @@ var Pattern = (function PatternClosure() {
     // Output: the appropriate fillStyle or strokeStyle
     getPattern: function Pattern_getPattern(ctx) {
       error('Should not call Pattern.getStyle: ' + ctx);
-    }
+    },
   };
 
   Pattern.parseShading = function Pattern_parseShading(shading, matrix, xref,
@@ -91,7 +70,7 @@ var Pattern = (function PatternClosure() {
         throw ex;
       }
       handler.send('UnsupportedFeature',
-                   {featureId: UNSUPPORTED_FEATURES.shadingPattern});
+                   { featureId: UNSUPPORTED_FEATURES.shadingPattern, });
       warn(ex);
       return new Shadings.Dummy();
     }
@@ -110,7 +89,7 @@ Shadings.SMALL_NUMBER = 1e-6;
 Shadings.RadialAxial = (function RadialAxialClosure() {
   function RadialAxial(dict, matrix, xref, res) {
     this.matrix = matrix;
-    this.coordsArr = dict.get('Coords');
+    this.coordsArr = dict.getArray('Coords');
     this.shadingType = dict.get('ShadingType');
     this.type = 'Pattern';
     var cs = dict.get('ColorSpace', 'CS');
@@ -119,14 +98,14 @@ Shadings.RadialAxial = (function RadialAxialClosure() {
 
     var t0 = 0.0, t1 = 1.0;
     if (dict.has('Domain')) {
-      var domainArr = dict.get('Domain');
+      var domainArr = dict.getArray('Domain');
       t0 = domainArr[0];
       t1 = domainArr[1];
     }
 
     var extendStart = false, extendEnd = false;
     if (dict.has('Extend')) {
-      var extendArr = dict.get('Extend');
+      var extendArr = dict.getArray('Extend');
       extendStart = extendArr[0];
       extendEnd = extendArr[1];
     }
@@ -234,7 +213,7 @@ Shadings.RadialAxial = (function RadialAxialClosure() {
       }
 
       return ['RadialAxial', type, this.colorStops, p0, p1, r0, r1];
-    }
+    },
   };
 
   return RadialAxial;
@@ -334,7 +313,7 @@ Shadings.Mesh = (function MeshClosure() {
         this.context.colorFn(components, 0, color, 0);
       }
       return this.context.colorSpace.getRgb(color, 0);
-    }
+    },
   };
 
   function decodeType4Shading(mesh, reader) {
@@ -348,7 +327,7 @@ Shadings.Mesh = (function MeshClosure() {
       var coord = reader.readCoordinate();
       var color = reader.readComponents();
       if (verticesLeft === 0) { // ignoring flags if we started a triangle
-        assert(0 <= f && f <= 2, 'Unknown type4 flag');
+        assert((0 <= f && f <= 2), 'Unknown type4 flag');
         switch (f) {
           case 0:
             verticesLeft = 3;
@@ -393,7 +372,7 @@ Shadings.Mesh = (function MeshClosure() {
       type: 'lattice',
       coords: new Int32Array(ps),
       colors: new Int32Array(ps),
-      verticesPerRow: verticesPerRow
+      verticesPerRow,
     });
   }
 
@@ -500,7 +479,7 @@ Shadings.Mesh = (function MeshClosure() {
       type: 'lattice',
       coords: figureCoords,
       colors: figureColors,
-      verticesPerRow: verticesPerRow
+      verticesPerRow,
     };
   }
 
@@ -512,7 +491,7 @@ Shadings.Mesh = (function MeshClosure() {
     var cs = new Int32Array(4); // c00, c30, c03, c33
     while (reader.hasData) {
       var f = reader.readFlag();
-      assert(0 <= f && f <= 3, 'Unknown type6 flag');
+      assert((0 <= f && f <= 3), 'Unknown type6 flag');
       var i, ii;
       var pi = coords.length;
       for (i = 0, ii = (f !== 0 ? 8 : 12); i < ii; i++) {
@@ -610,7 +589,7 @@ Shadings.Mesh = (function MeshClosure() {
       mesh.figures.push({
         type: 'patch',
         coords: new Int32Array(ps), // making copies of ps and cs
-        colors: new Int32Array(cs)
+        colors: new Int32Array(cs),
       });
     }
   }
@@ -622,7 +601,7 @@ Shadings.Mesh = (function MeshClosure() {
     var cs = new Int32Array(4); // c00, c30, c03, c33
     while (reader.hasData) {
       var f = reader.readFlag();
-      assert(0 <= f && f <= 3, 'Unknown type7 flag');
+      assert((0 <= f && f <= 3), 'Unknown type7 flag');
       var i, ii;
       var pi = coords.length;
       for (i = 0, ii = (f !== 0 ? 12 : 16); i < ii; i++) {
@@ -675,7 +654,7 @@ Shadings.Mesh = (function MeshClosure() {
       mesh.figures.push({
         type: 'patch',
         coords: new Int32Array(ps), // making copies of ps and cs
-        colors: new Int32Array(cs)
+        colors: new Int32Array(cs),
       });
     }
   }
@@ -731,7 +710,7 @@ Shadings.Mesh = (function MeshClosure() {
     this.matrix = matrix;
     this.shadingType = dict.get('ShadingType');
     this.type = 'Pattern';
-    this.bbox = dict.get('BBox');
+    this.bbox = dict.getArray('BBox');
     var cs = dict.get('ColorSpace', 'CS');
     cs = ColorSpace.parse(cs, xref, res);
     this.cs = cs;
@@ -749,10 +728,10 @@ Shadings.Mesh = (function MeshClosure() {
       bitsPerCoordinate: dict.get('BitsPerCoordinate'),
       bitsPerComponent: dict.get('BitsPerComponent'),
       bitsPerFlag: dict.get('BitsPerFlag'),
-      decode: dict.get('Decode'),
+      decode: dict.getArray('Decode'),
       colorFn: fn,
       colorSpace: cs,
-      numComps: fn ? 1 : cs.numComps
+      numComps: fn ? 1 : cs.numComps,
     };
     var reader = new MeshStreamReader(stream, decodeContext);
 
@@ -796,7 +775,7 @@ Shadings.Mesh = (function MeshClosure() {
     getIR: function Mesh_getIR() {
       return ['Mesh', this.shadingType, this.coords, this.colors, this.figures,
         this.bounds, this.matrix, this.bbox, this.background];
-    }
+    },
   };
 
   return Mesh;
@@ -810,18 +789,24 @@ Shadings.Dummy = (function DummyClosure() {
   Dummy.prototype = {
     getIR: function Dummy_getIR() {
       return ['Dummy'];
-    }
+    },
   };
   return Dummy;
 })();
 
 function getTilingPatternIR(operatorList, dict, args) {
-  var matrix = dict.get('Matrix');
-  var bbox = dict.get('BBox');
-  var xstep = dict.get('XStep');
-  var ystep = dict.get('YStep');
-  var paintType = dict.get('PaintType');
-  var tilingType = dict.get('TilingType');
+  let matrix = dict.getArray('Matrix');
+  let bbox = Util.normalizeRect(dict.getArray('BBox'));
+  let xstep = dict.get('XStep');
+  let ystep = dict.get('YStep');
+  let paintType = dict.get('PaintType');
+  let tilingType = dict.get('TilingType');
+
+  // Ensure that the pattern has a non-zero width and height, to prevent errors
+  // in `pattern_helper.js` (fixes issue8330.pdf).
+  if ((bbox[2] - bbox[0]) === 0 || (bbox[3] - bbox[1]) === 0) {
+    throw new Error(`getTilingPatternIR - invalid /BBox array: [${bbox}].`);
+  }
 
   return [
     'TilingPattern', args, operatorList, matrix, bbox, xstep, ystep,
@@ -829,6 +814,7 @@ function getTilingPatternIR(operatorList, dict, args) {
   ];
 }
 
-exports.Pattern = Pattern;
-exports.getTilingPatternIR = getTilingPatternIR;
-}));
+export {
+  Pattern,
+  getTilingPatternIR,
+};

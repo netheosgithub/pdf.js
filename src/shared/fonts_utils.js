@@ -73,7 +73,7 @@ function readCharstringEncoding(aString) {
   var charstringTokens = [];
 
   var count = aString.length;
-  for (var i = 0; i < count; ) {
+  for (var i = 0; i < count; ) { // eslint-disable-line space-in-parens
     var value = aString[i++] | 0;
     var token = null;
 
@@ -361,9 +361,9 @@ var Type2Parser = function type2Parser(aFilePath) {
     dump('privateData:' + privateDict);
     parseAsToken(privateDict, CFFDictPrivateDataMap);
 
-    for (var p in font.map) {
-      dump(p + '::' + font.get(p));
-    }
+    font.forEach(function(key, value) {
+      dump(key + '::' + value);
+    });
 
     // Read CharStrings Index
     var charStringsOffset = font.get('CharStrings');

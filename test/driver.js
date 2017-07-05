@@ -12,12 +12,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* globals PDFJS, pdfjsSharedUtil */
+/* globals PDFJS, pdfjsDistBuildPdf */
 
 'use strict';
 
 var WAITING_TIME = 100; // ms
 var PDF_TO_CSS_UNITS = 96.0 / 72.0;
+
+var StatTimer = pdfjsDistBuildPdf.StatTimer;
 
 /**
  * @class
@@ -26,17 +28,29 @@ var LinkServiceMock = (function LinkServiceMockClosure() {
   function LinkServiceMock() {}
 
   LinkServiceMock.prototype = {
-    navigateTo: function (dest) {},
+    get page() {
+      return 0;
+    },
 
-    getDestinationHash: function (dest) {
+    set page(value) {},
+
+    navigateTo(dest) {},
+
+    getDestinationHash(dest) {
       return '#';
     },
 
-    getAnchorUrl: function (hash) {
+    getAnchorUrl(hash) {
       return '#';
     },
 
-    executeNamedAction: function (action) {}
+    setHash(hash) {},
+
+    executeNamedAction(action) {},
+
+    onFileAttachmentAnnotation(params) {},
+
+    cachePageRef(pageNum, pageRef) {},
   };
 
   return LinkServiceMock;
@@ -64,7 +78,8 @@ var rasterizeTextLayer = (function rasterizeTextLayerClosure() {
     return textLayerStylePromise;
   }
 
-  function rasterizeTextLayer(ctx, viewport, textContent) {
+  function rasterizeTextLayer(ctx, viewport, textContent,
+                              enhanceTextSelection) {
     return new Promise(function (resolve) {
       // Building SVG with size of the viewport.
       var svg = document.createElementNS(SVG_NS, 'svg:svg');
@@ -88,11 +103,13 @@ var rasterizeTextLayer = (function rasterizeTextLayerClosure() {
 
       // Rendering text layer as HTML.
       var task = PDFJS.renderTextLayer({
-        textContent: textContent,
+        textContent,
         container: div,
-        viewport: viewport
+        viewport,
+        enhanceTextSelection,
       });
       Promise.all([stylePromise, task.promise]).then(function (results) {
+        task.expandTextDivs(true);
         style.textContent = results[0];
         svg.appendChild(foreignObject);
 
@@ -158,7 +175,8 @@ var rasterizeAnnotationLayer = (function rasterizeAnnotationLayerClosure() {
     return imagePromises;
   }
 
-  function rasterizeAnnotationLayer(ctx, viewport, annotations, page) {
+  function rasterizeAnnotationLayer(ctx, viewport, annotations, page,
+                                    renderInteractiveForms) {
     return new Promise(function (resolve) {
       // Building SVG with size of the viewport.
       var svg = document.createElementNS(SVG_NS, 'svg:svg');
@@ -181,13 +199,14 @@ var rasterizeAnnotationLayer = (function rasterizeAnnotationLayerClosure() {
       stylePromise.then(function (styles) {
         style.textContent = styles;
 
-        var annotation_viewport = viewport.clone({ dontFlip: true });
+        var annotation_viewport = viewport.clone({ dontFlip: true, });
         var parameters = {
           viewport: annotation_viewport,
-          div: div,
-          annotations: annotations,
-          page: page,
-          linkService: new LinkServiceMock()
+          div,
+          annotations,
+          page,
+          linkService: new LinkServiceMock(),
+          renderInteractiveForms,
         };
         PDFJS.AnnotationLayer.render(parameters);
 
@@ -234,18 +253,20 @@ var rasterizeAnnotationLayer = (function rasterizeAnnotationLayerClosure() {
 /**
  * @class
  */
-var Driver = (function DriverClosure() {
+var Driver = (function DriverClosure() { // eslint-disable-line no-unused-vars
   /**
    * @constructs Driver
    * @param {DriverOptions} options
    */
   function Driver(options) {
     // Configure the global PDFJS object
-    PDFJS.workerSrc = '../src/worker_loader.js';
+    PDFJS.workerSrc = '../build/generic/build/pdf.worker.js';
     PDFJS.cMapPacked = true;
     PDFJS.cMapUrl = '../external/bcmaps/';
     PDFJS.enableStats = true;
     PDFJS.imageResourcesPath = '/web/images/';
+    // Opt-in to using the latest API.
+    PDFJS.pdfjsNext = true;
 
     // Set the passed options
     this.inflight = options.inflight;
@@ -283,7 +304,7 @@ var Driver = (function DriverClosure() {
       var self = this;
       window.onerror = function(message, source, line, column, error) {
         self._info('Error: ' + message + ' Script: ' + source + ' Line: ' +
-                  line + ' Column: ' + column + ' StackTrace: ' +  error);
+                   line + ' Column: ' + column + ' StackTrace: ' + error);
       };
       this._info('User agent: ' + navigator.userAgent);
       this._log('Harness thinks this browser is "' + this.browser +
@@ -315,66 +336,67 @@ var Driver = (function DriverClosure() {
       }, this.delay);
     },
 
-    _nextTask: function Driver_nextTask() {
-      var self = this;
-      var failure = '';
+    _nextTask() {
+      let failure = '';
 
-      this._cleanup();
+      this._cleanup().then(() => {
+        if (this.currentTask === this.manifest.length) {
+          this._done();
+          return;
+        }
+        let task = this.manifest[this.currentTask];
+        task.round = 0;
+        task.pageNum = task.firstPage || 1;
+        task.stats = { times: [], };
 
-      if (this.currentTask === this.manifest.length) {
-        this._done();
-        return;
-      }
-      var task = this.manifest[this.currentTask];
-      task.round = 0;
-      task.pageNum = task.firstPage || 1;
-      task.stats = { times: [] };
+        this._log('Loading file "' + task.file + '"\n');
 
-      this._log('Loading file "' + task.file + '"\n');
-
-      var absoluteUrl = new URL(task.file, window.location).href; 
-      PDFJS.disableRange = task.disableRange;
-      PDFJS.disableAutoFetch = !task.enableAutoFetch;
-      try {
-        PDFJS.getDocument({
-          url: absoluteUrl,
-          password: task.password
-        }).then(function(doc) {
-          task.pdfDoc = doc;
-          self._nextPage(task, failure);
-        }, function(e) {
-          failure = 'Loading PDF document: ' + e;
-          self._nextPage(task, failure);
-        });
-        return;
-      } catch (e) {
-        failure = 'Loading PDF document: ' + this._exceptionToString(e);
-      }
-      this._nextPage(task, failure);
+        let absoluteUrl = new URL(task.file, window.location).href;
+        PDFJS.disableRange = task.disableRange;
+        PDFJS.disableAutoFetch = !task.enableAutoFetch;
+        try {
+          PDFJS.getDocument({
+            url: absoluteUrl,
+            password: task.password,
+          }).then((doc) => {
+            task.pdfDoc = doc;
+            this._nextPage(task, failure);
+          }, (err) => {
+            failure = 'Loading PDF document: ' + err;
+            this._nextPage(task, failure);
+          });
+          return;
+        } catch (e) {
+          failure = 'Loading PDF document: ' + this._exceptionToString(e);
+        }
+        this._nextPage(task, failure);
+      });
     },
 
-    _cleanup: function Driver_cleanup() {
+    _cleanup() {
       // Clear out all the stylesheets since a new one is created for each font.
       while (document.styleSheets.length > 0) {
-        var styleSheet = document.styleSheets[0];
+        let styleSheet = document.styleSheets[0];
         while (styleSheet.cssRules.length > 0) {
           styleSheet.deleteRule(0);
         }
-        var ownerNode = styleSheet.ownerNode;
+        let ownerNode = styleSheet.ownerNode;
         ownerNode.parentNode.removeChild(ownerNode);
       }
-      var body = document.body;
+      let body = document.body;
       while (body.lastChild !== this.end) {
         body.removeChild(body.lastChild);
       }
 
+      let destroyedPromises = [];
       // Wipe out the link to the pdfdoc so it can be GC'ed.
-      for (var i = 0; i < this.manifest.length; i++) {
+      for (let i = 0; i < this.manifest.length; i++) {
         if (this.manifest[i].pdfDoc) {
-          this.manifest[i].pdfDoc.destroy();
+          destroyedPromises.push(this.manifest[i].pdfDoc.destroy());
           delete this.manifest[i].pdfDoc;
         }
       }
+      return Promise.all(destroyedPromises);
     },
 
     _exceptionToString: function Driver_exceptionToString(e) {
@@ -427,18 +449,9 @@ var Driver = (function DriverClosure() {
 
       if (task.skipPages && task.skipPages.indexOf(task.pageNum) >= 0) {
         this._log(' Skipping page ' + task.pageNum + '/' +
-          task.pdfDoc.numPages + '... ');
-
-        // Empty the canvas
-        this.canvas.width = 1;
-        this.canvas.height = 1;
-        ctx = this.canvas.getContext('2d', {alpha: false});
-        ctx.save();
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, 1, 1);
-        ctx.restore();
-
-        this._snapshot(task, '');
+                  task.pdfDoc.numPages + '...\n');
+        task.pageNum++;
+        this._nextPage(task);
         return;
       }
 
@@ -447,12 +460,15 @@ var Driver = (function DriverClosure() {
           this._log(' Loading page ' + task.pageNum + '/' +
             task.pdfDoc.numPages + '... ');
           this.canvas.mozOpaque = true;
-          ctx = this.canvas.getContext('2d', {alpha: false});
+          ctx = this.canvas.getContext('2d', { alpha: false, });
           task.pdfDoc.getPage(task.pageNum).then(function(page) {
             var viewport = page.getViewport(PDF_TO_CSS_UNITS);
             self.canvas.width = viewport.width;
             self.canvas.height = viewport.height;
             self._clearCanvas();
+
+            // Initialize various `eq` test subtypes, see comment below.
+            var renderAnnotations = false, renderForms = false;
 
             var textLayerCanvas, annotationLayerCanvas;
             var initPromise;
@@ -468,18 +484,23 @@ var Driver = (function DriverClosure() {
               var textLayerContext = textLayerCanvas.getContext('2d');
               textLayerContext.clearRect(0, 0,
                 textLayerCanvas.width, textLayerCanvas.height);
+              var enhanceText = !!task.enhance;
               // The text builder will draw its content on the test canvas
-              initPromise =
-                page.getTextContent({ normalizeWhitespace: true }).then(
-                  function(textContent) {
-                    return rasterizeTextLayer(textLayerContext, viewport,
-                                              textContent);
-                });
+              initPromise = page.getTextContent({
+                normalizeWhitespace: true,
+              }).then(function(textContent) {
+                return rasterizeTextLayer(textLayerContext, viewport,
+                                          textContent, enhanceText);
+              });
             } else {
               textLayerCanvas = null;
+              // We fetch the `eq` specific test subtypes here, to avoid
+              // accidentally changing the behaviour for other types of tests.
+              renderAnnotations = !!task.annotations;
+              renderForms = !!task.forms;
 
               // Render the annotation layer if necessary.
-              if (task.annotations) {
+              if (renderAnnotations || renderForms) {
                 // Create a dummy canvas for the drawing operations.
                 annotationLayerCanvas = self.annotationLayerCanvas;
                 if (!annotationLayerCanvas) {
@@ -495,11 +516,11 @@ var Driver = (function DriverClosure() {
 
                 // The annotation builder will draw its content on the canvas.
                 initPromise =
-                  page.getAnnotations({ intent: 'display' }).then(
+                  page.getAnnotations({ intent: 'display', }).then(
                     function(annotations) {
                       return rasterizeAnnotationLayer(annotationLayerContext,
                                                       viewport, annotations,
-                                                      page);
+                                                      page, renderForms);
                   });
               } else {
                 annotationLayerCanvas = null;
@@ -509,7 +530,8 @@ var Driver = (function DriverClosure() {
 
             var renderContext = {
               canvasContext: ctx,
-              viewport: viewport
+              viewport,
+              renderInteractiveForms: renderForms,
             };
             var completeRender = (function(error) {
               // if text layer is present, compose it on top of the page
@@ -527,7 +549,7 @@ var Driver = (function DriverClosure() {
               }
               page.cleanup();
               task.stats = page.stats;
-              page.stats = new pdfjsSharedUtil.StatTimer();
+              page.stats = new StatTimer();
               self._snapshot(task, error);
             });
             initPromise.then(function () {
@@ -550,7 +572,7 @@ var Driver = (function DriverClosure() {
     },
 
     _clearCanvas: function Driver_clearCanvas() {
-      var ctx = this.canvas.getContext('2d', {alpha: false});
+      var ctx = this.canvas.getContext('2d', { alpha: false, });
       ctx.beginPath();
       ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     },
@@ -586,7 +608,7 @@ var Driver = (function DriverClosure() {
     _info: function Driver_info(message) {
       this._send('/info', JSON.stringify({
         browser: this.browser,
-        message: message
+        message,
       }));
     },
 
@@ -622,12 +644,12 @@ var Driver = (function DriverClosure() {
         numPages: task.pdfDoc ?
                   (task.lastPage || task.pdfDoc.numPages) : 0,
         lastPageNum: this._getLastPageNumber(task),
-        failure: failure,
+        failure,
         file: task.file,
         round: task.round,
         page: task.pageNum,
-        snapshot: snapshot,
-        stats: task.stats.times
+        snapshot,
+        stats: task.stats.times,
       });
       this._send('/submit_task_results', result, callback);
     },
@@ -654,7 +676,7 @@ var Driver = (function DriverClosure() {
       };
       this.inflight.textContent = this.inFlightRequests++;
       r.send(message);
-    }
+    },
   };
 
   return Driver;
