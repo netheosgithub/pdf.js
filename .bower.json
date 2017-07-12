@@ -1,0 +1,19 @@
+{
+  "name": "pdfjs-netheos-dist",
+  "main": [
+    "./web/compatibility.js",
+    "./build/pdf.js"
+  ],
+  "ignore": [],
+  "dependencies": {},
+  "homepage": "https://github.com/netheosgithub/pdf.js",
+  "_release": "v1.8.517_v1.1",
+  "_resolution": {
+    "type": "tag",
+    "tag": "v1.8.517_v1.1",
+    "commit": "78b40275ddadb664645138d23aacef7e83d818c8"
+  },
+  "_source": "https://github.com/netheosgithub/pdf.js.git",
+  "_target": "v1.8.517_v1.1",
+  "_originalSource": "pdfjs-netheos-dist"
+}
