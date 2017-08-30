@@ -4,14 +4,14 @@
   "ignore": [],
   "dependencies": {},
   "homepage": "https://github.com/netheosgithub/pdf.js",
-  "_release": "v1.8.519_v1.1.3",
+  "_release": "v1.8.519_v1.1.4",
   "_resolution": {
     "type": "tag",
-    "tag": "v1.8.519_v1.1.3",
+    "tag": "v1.8.519_v1.1.4",
     "commit": "78b40275ddadb664645138d23aacef7e83d818c8"
   },
   "_source": "https://github.com/netheosgithub/pdf.js.git",
-  "_target": "v1.8.519_v1.1.3",
+  "_target": "v1.8.519_v1.1.4",
   "_originalSource": "pdfjs-netheos-dist",
   "authors": [
     "jérémie hartz <j.hartz@netheos.net>"
