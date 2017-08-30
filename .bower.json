@@ -1,7 +1,7 @@
 {
   "name": "pdfjs-netheos-dist",
   "main": [
-    "./web/compatibility.js",
+    "./src/shared/compatibility.js",
     "./build/pdf.js"
   ],
   "ignore": [],
