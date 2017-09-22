@@ -28295,9 +28295,6 @@ var WidgetAnnotation = function WidgetAnnotationClosure() {
       data.fieldFlags = 0;
     }
     data.readOnly = this.hasFieldFlag(_util.AnnotationFieldFlag.READONLY);
-    if (data.fieldType === 'Sig') {
-      this.setFlags(_util.AnnotationFlag.HIDDEN);
-    }
   }
   _util.Util.inherit(WidgetAnnotation, Annotation, {
     _constructFieldName: function WidgetAnnotation_constructFieldName(dict) {
@@ -40515,8 +40512,8 @@ exports.Type1Parser = Type1Parser;
 "use strict";
 
 
-var pdfjsVersion = '1.8.521';
-var pdfjsBuild = 'ee5224d';
+var pdfjsVersion = '1.8.526';
+var pdfjsBuild = '1197046';
 var pdfjsCoreWorker = __w_pdfjs_require__(8);
 {
   __w_pdfjs_require__(19);
